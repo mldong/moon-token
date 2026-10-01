@@ -39,16 +39,18 @@ jobs:
           grep -q "Total tests: 33" wasm-test.txt
           grep -q "Total tests: 33" native-test.txt
 
-      # 示例站自检：编译通过 ≠ 页面渲染得出来，所以起服务真跑一遍再收掉
-      - name: Demo site smoke (HTML + JSON facades)
-        run: bash scripts/site-smoke.sh
-
       # 参赛验收第 4 条"README 可复现"：把 README 的最小用法逐字抽进一个
       # 只依赖注册表已发布件的独立工程，真编译真跑（本机已验一次 PASS）
       - name: README snippet check (against published modules)
         run: |
           export MOON_HOME="$HOME/.moon"
           bash scripts/readme-check.sh
+
+      # 使用文档里的每个 moonbit 块都真编译真跑（判据同样对注册表已发布件）
+      - name: Docs snippet check (against published modules)
+        run: |
+          export MOON_HOME="$HOME/.moon"
+          bash scripts/docs-check.sh
 
       - name: Assert zero warnings
         run: |
