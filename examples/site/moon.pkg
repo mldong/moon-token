@@ -6,4 +6,5 @@ import {
   "mldong/moon-token-store/port",
   "mldong/moon-token-store/memory" @mem,
   "moonbitlang/core/env",
+  "moonbitlang/core/encoding/percent",
 }

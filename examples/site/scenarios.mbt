@@ -125,7 +125,12 @@ async fn permission_text(
   required : Array[String],
   mode : @port.MatchMode,
 ) -> String {
-  bool_text(auth.has_permission(token, required, mode~))
+  // 判定本身可能抛（未登录那一档），剧本页要的是把原因画出来
+  try {
+    bool_text(auth.has_permission(token, required, mode~))
+  } catch {
+    err => "拦下 → " + err.message()
+  }
 }
 
 ///|

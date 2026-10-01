@@ -320,16 +320,24 @@ async fn guard_verdict(
       let second = if perm.is_empty() {
         "（本次未要求权限）"
       } else {
-        bool_text_site(
-          auth.has_permission(
-            token,
-            [perm],
-            mode=if mode_or { @port.Or } else { @port.And },
-          ),
-        ) +
-        "　要求权限 " +
-        perm +
-        (if mode_or { "（OR）" } else { "（AND）" })
+        // has_permission 在"没登录"这一档是抛出来而不是返回 false：
+        // 这一页要的就是把原因画出来，所以就地接住，别让异常把整页带崩
+        // （10-01 owner 实点出来的 bug——空 token 点一次「模拟一次」就变成错误页）
+        let label = "　要求权限 " +
+          perm +
+          (if mode_or { "（OR）" } else { "（AND）" })
+        try {
+          bool_text_site(
+            auth.has_permission(
+              token,
+              [perm],
+              mode=if mode_or { @port.Or } else { @port.And },
+            ),
+          ) +
+          label
+        } catch {
+          err => "拦下 → " + err.message() + label
+        }
       }
       (first, second)
     }
@@ -357,10 +365,12 @@ pub async fn page_guard(site : Site, params : Map[String, String]) -> String {
   let (verdict, perm_line) = guard_verdict(
     site, realm, token, path, perm, mode_or,
   )
+  // 五个字段必须在同一个 form 里：token 曾漏在 form 外面，点一次「模拟一次」就把它丢了
   let body = text_form(
       "/guard",
       [
         ("realm", "realm", realm),
+        ("token", "token", token),
         ("path", "请求路径", path),
         ("perm", "要求权限（留空＝不要求）", perm),
         ("mode", "and / or", if mode_or { "or" } else { "and" }),
@@ -368,10 +378,17 @@ pub async fn page_guard(site : Site, params : Map[String, String]) -> String {
       "模拟一次",
     ) +
     paras([
-      "<label>token <input name='token' size='58' value='" +
-      esc(token) +
-      "'></label>",
-      "<a href='/sessions'>从键位矩阵点某枚 token 过来</a>",
+      "<p class='sub'>当前 token：<code>" +
+      esc(short(token)) +
+      "</code>" +
+      (
+        if token.is_empty() {
+          "（空 ⇒ 会被判 AbsentToken）"
+        } else {
+          "（全值 " + token.length().to_string() + " 字符）"
+        }
+      ) +
+      "　想换一枚：<a href='/sessions'>去键位矩阵点任意一行 T 会话</a></p>",
       pre_lines([verdict, perm_line]),
       "<h2>这一步在库里走了什么</h2>",
       pre_lines([

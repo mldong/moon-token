@@ -27,7 +27,9 @@ pub fn esc(s : String) -> String {
 
 ///|
 /// `Request.path` 带完整请求目标（含 `?a=1&b=2`）——parser 实测只按空格切，故这里自己拆。
-/// 查询值按字面取用：演示站的输入项全是 select 里的固定 ASCII 值，不做 percent 解码。
+/// 值必须按 `application/x-www-form-urlencoded` 解回来：浏览器把表单里的 `/` 编成 `%2f`、
+/// `:` 编成 `%3a`，不解就直接拿 `%2fapi%2fuser%2finfo` 去匹配 `/api/**`，裁决必然走偏
+/// （10-01 owner 实点出来的 bug）。
 pub fn split_path_query(target : String) -> (String, Map[String, String]) {
   let parts = @port.split_by(target, '?')
   let route = parts[0]
@@ -36,13 +38,28 @@ pub fn split_path_query(target : String) -> (String, Map[String, String]) {
     for pair in @port.split_by(parts[1], '&') {
       let kv = @port.split_by(pair, '=')
       if kv.length() == 2 {
-        params[kv[0]] = kv[1]
+        params[form_decode(kv[0])] = form_decode(kv[1])
       } else if kv.length() == 1 && !kv[0].is_empty() {
-        params[kv[0]] = ""
+        params[form_decode(kv[0])] = ""
       }
     }
   }
   (route, params)
+}
+
+///|
+/// form-urlencoded 的 `+` 表空格；`%XX` 连段由 core 的 percent 解码器按 UTF-8 处理
+/// （自己写会把中文输入解成碎字符）。形状不合的转义它按字面回填，不抛错。
+fn form_decode(raw : String) -> String {
+  let buf = StringBuilder()
+  for ch in raw {
+    if ch == '+' {
+      buf.write_char(' ')
+    } else {
+      buf.write_char(ch)
+    }
+  }
+  @percent.decode_lossy(buf.to_string())
 }
 
 ///|
