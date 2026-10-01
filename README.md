@@ -87,31 +87,50 @@ let route_guard = @guard.RouteGuard::new()
   .not_match_pattern("/api/public/**")
 ```
 
-## 完整可运行示例：可视化演示站
+## 完整可运行示例
 
-一个进程、一个端口、两个门面：`/` 起是**给人看的 HTML 演示站**（MoonBit 服务端直出，
-零前端构建、零模板引擎），`/api/**` 与 `/login`、`/kick`、`/logout` 是**给脚本看的 JSON**。
-两者共用同一份站点状态与同一套 `RouteGuard`，所以 curl 登录完刷新页面就能看到新会话。
+`examples/cmd/main` 是一个手写十行路由的最小 HTTP 服务（不引任何 web 框架——库本身零 web 依赖），
+把库的每个用例都露成一个端点：
 
 ```bash
-moon run --target wasm examples/cmd/serve     # 起在 http://127.0.0.1:18891
-bash examples/curl.sh                         # 另开终端：正向 / 精确原因 / 页面回归
-bash scripts/site-smoke.sh                    # 一把梭：自己起、自己测、自己收
+moon run --target wasm examples/cmd/main      # 起在 http://127.0.0.1:18890
+bash examples/curl.sh                         # 另开终端：13 步端对端剧本
 ```
 
-演示站上能直接看到的机制（都在 `examples/site/`，是库的一个普通使用者）：
+`examples/curl.sh` 那 13 步就是本库的行为说明书——每步都断言**精确原因**而不是"有没有报错"：
 
-| 页面 | 演什么 |
+| 步 | 动作 | 断言到的原因 |
+|---|---|---|
+| 2 | 无 token 打 `/api/user/info` | `AbsentToken` |
+| 3 | 无 token 打 `/api/public/ping` | 放行（守卫的豁免臂 `not_match_pattern`） |
+| 4 | 登录 | 拿到 access + refresh 整对（各 40 字符） |
+| 6 | `/whoami` | 业务只供数、AND 裁决在库 |
+| 7–8 | 轮转后旧 access 再用 | `UnknownToken`（全量轮转＝旧对同废） |
+| 9 | 旧 refresh 重放 | `RefreshInvalid`（原子取删） |
+| 11 | 被踢方再用 | `KickedOut`（不是笼统未登录） |
+| 12 | 同账号另起一枚 | 仍有效（默认 `Coexist`） |
+| 13 | 注销后再用 | `UnknownToken`（与「被踢」分得开：注销删键、踢人落墓碑） |
+
+## 文档
+
+用法、机制与取舍写在 `docs/` 下，按"先能跑通 → 再懂为什么这样设计"的顺序排：
+
+| 文档 | 讲什么 |
 |---|---|
-| 总览 | 依赖方向图 + 实时读数（键位数、事件数、时钟模式） |
-| 键位矩阵 | `T:/A:/R:/D:/S:` 五种键的真实载荷与剩余寿命；被踢的墓碑看得见，宽窗过后被回收也看得见 |
-| 剧本剧场 | 11 个既定剧本，逐步给「调用 → 精确结果 → 这一步 store 被怎么调」；跑在独立 realm + 独立手动时钟上，不污染站点状态 |
-| 守卫模拟 | 改路径 / token / 所需权限，看裁决落到哪一条原因上（`AbsentToken`/`KickedOut`/`SessionExpired`…） |
-| 时间机器 | 真实/手动两态时钟。时效类特性（过期、活跃超时、踢人宽窗、续期节流）不能等真时间 |
-| 事件流 | 落库后 fire 的事件流水；站点故意多挂一条总会抛错的观察者，用来演"观察者坏掉不带崩主流程" |
-
-`examples/site/state.mbt` 里的 `ObservingStore` 顺带是"端口能被第三方包一层"的活证据：
-它只是 `TokenStore` 的另一个实现方，委托内存适配器并记一条调用流水，库那边一行没改。
+| [快速开始](docs/quick-start.md) | 装好、五分钟跑通一条完整链，逐步给真读数 |
+| [核心概念](docs/concepts.md) | realm、access/refresh 整对、反查族、双层时效、五种键位形状 |
+| [登录与并发策略](docs/login-and-concurrency.md) | `Coexist` / `Supersede` / `Shared` 三态与各自适用场景 |
+| [会话与踢人](docs/session-management.md) | 在线列表、设备列表、token 会话/账号会话读写、踢/顶/封禁/解禁 |
+| [刷新与轮转](docs/refresh-rotation.md) | 全量轮转语义、重放防护、为什么**不**校验绑定的 access 是否存活 |
+| [权限与角色](docs/permissions.md) | SPI 供数、`has_*` 与 `check_*` 两条路、AND/OR 裁决 |
+| [路由守卫](docs/route-guard.md) | 模式匹配、豁免优先级、怎么接到你选的 web 框架上 |
+| [领域事件](docs/events.md) | 7 个事件、码值表、"落库后 fire"与观察者异常处理 |
+| [存储端口](docs/storage-port.md) | `TokenStore` 契约、`FamilyPatch` 意图补丁、惰性过期两档、怎么写自己的后端 |
+| [错误词汇表](docs/error-vocabulary.md) | 7 个未登录原因 + 5 类错误，以及映射成响应码的建议 |
+| [配置与默认值](docs/configuration.md) | 八项配置的默认值与定这个值的理由 |
+| [时钟与熵源](docs/clock-and-entropy.md) | 可注入时钟怎么用、三档目标的熵源差异与 `abort` 守卫 |
+| [测试指南](docs/testing.md) | 三场景怎么落地：注入时钟、计数型 store、断言精确原因 |
+| [常见问题](docs/faq.md) | 集群、多实例、序列化兼容、与 JWT 的取舍 |
 
 ## 设计与规范
 
