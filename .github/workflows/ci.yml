@@ -39,6 +39,13 @@ jobs:
           grep -q "Total tests: 33" wasm-test.txt
           grep -q "Total tests: 33" native-test.txt
 
+      # 参赛验收第 4 条"README 可复现"：把 README 的最小用法逐字抽进一个
+      # 只依赖注册表已发布件的独立工程，真编译真跑（本机已验一次 PASS）
+      - name: README snippet check (against published modules)
+        run: |
+          export MOON_HOME="$HOME/.moon"
+          bash scripts/readme-check.sh
+
       - name: Assert zero warnings
         run: |
           moon check --target wasm --no-render 2>&1 | tee check.txt

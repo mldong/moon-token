@@ -39,11 +39,15 @@ moon add mldong/moon-token-store   # 内存实现（核心包已依赖，通常�
 ## 最小用法
 
 ```moonbit
+// 包别名（moon.pkg）：app / style / guard 取自 mldong/moon-token，
+// port / memory 取自 mldong/moon-token-store；跑 async 用例另需
+// moon add moonbitlang/async
+
 // 1. 装一个存储（内存实现；v2 起可换事务型/Lua 型后端）
 let store = @mem.MemoryStore::new("user")
 
 // 2. 权限源由业务实现（端口是 async，查库不用绕路）
-struct MyPerms {
+pub(all) struct MyPerms {
   permissions : Array[String]
   roles : Array[String]
 }
@@ -57,11 +61,15 @@ impl @port.PermissionProvider for MyPerms with fn get_roles(self, _login_id, _de
 }
 
 // 3. 装配一个账号体系（启动期一次，无反射、无扫描魔法）
+// 实现体要在别处构造 ⇒ 必须 pub(all)；记录字面量要有已知目标类型，
+// 故先 let 绑类型再当实参传入（裸字面量直接作实参编不过，消费者实测撞过）。
+let perms : MyPerms = { permissions: ["user:info"], roles: ["admin"] }
+
 let auth = @app.TokenAuth::new(
   "user",
   @app.TokenConfig::default(),
   store,
-  { permissions: ["user:info"], roles: ["admin"] },
+  perms,
   @style.opaque_style(),
 )
 
@@ -70,11 +78,11 @@ let result = auth.login("u1", device="pc")
 let login_id = auth.check_login(result.token)   // "u1"
 
 // 5. 反向操作：被操作方下次请求拿到的是精确原因
-auth.kickout("u1", device="pc")
+auth.kickout("u1", device="pc") |> ignore
 //   -> NotLogin(KickedOut)，而不是笼统的"未登录"
 
 // 6. 守卫：保护面 + 豁免 + 追加断言
-let guard = @guard.RouteGuard::new()
+let route_guard = @guard.RouteGuard::new()
   .match_pattern("/api/**")
   .not_match_pattern("/api/public/**")
 ```
