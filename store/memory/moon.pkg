@@ -1,0 +1,3 @@
+import {
+  "mldong/moon-token-store/port" @port,
+}
