@@ -15,7 +15,10 @@ pub fn TokenSession::make(
   at : Int64,
   expire_at : Int64,
 ) -> TokenSession {
-  let s : TokenSession = { token, record: @port.SessionRecord::make(login_id, device, at, expire_at) }
+  let s : TokenSession = {
+    token,
+    record: @port.SessionRecord::make(login_id, device, at, expire_at),
+  }
   s
 }
 
@@ -81,34 +84,43 @@ pub fn TokenSession::extra(self : TokenSession, key : String) -> String? {
 }
 
 ///|
-pub fn TokenSession::extra_entries(self : TokenSession) -> Array[(String, String)] {
+pub fn TokenSession::extra_entries(
+  self : TokenSession,
+) -> Array[(String, String)] {
   self.record.extra.to_array()
 }
 
 ///|
-pub fn TokenSession::set_extra(self : TokenSession, key : String, value : String?) -> Unit {
+pub fn TokenSession::set_extra(
+  self : TokenSession,
+  key : String,
+  value : String?,
+) -> Unit {
   if key.is_empty() {
     ()
   } else {
     match value {
-      None => {
-        self.record.extra.remove(key) |> ignore
-      }
-      Some(v) => {
-        self.record.extra[key] = v
-      }
+      None => self.record.extra.remove(key) |> ignore
+      Some(v) => self.record.extra[key] = v
     }
   }
 }
 
 ///|
-pub fn TokenSession::set_refresh_token(self : TokenSession, refresh : String) -> Unit {
+pub fn TokenSession::set_refresh_token(
+  self : TokenSession,
+  refresh : String,
+) -> Unit {
   self.record.refresh_token = refresh
 }
 
 ///|
 /// 滑动续期：只推进到期时刻与活跃标记，不改状态
-pub fn TokenSession::renew(self : TokenSession, now : Int64, expire_at : Int64) -> Unit {
+pub fn TokenSession::renew(
+  self : TokenSession,
+  now : Int64,
+  expire_at : Int64,
+) -> Unit {
   self.record.last_active = now
   if expire_at > self.record.expire_at {
     self.record.expire_at = expire_at
@@ -122,7 +134,11 @@ pub fn TokenSession::touch(self : TokenSession, now : Int64) -> Unit {
 }
 
 ///|
-fn TokenSession::mark_tombstone(self : TokenSession, status : @port.SessionStatus, deadline : Int64) -> Bool {
+fn TokenSession::mark_tombstone(
+  self : TokenSession,
+  status : @port.SessionStatus,
+  deadline : Int64,
+) -> Bool {
   // 单向迁移：非 Active 的会话已经是墓碑，不重复置位（幂等）
   if !self.record.status.same(@port.SessionStatus::Active) {
     false
@@ -139,7 +155,10 @@ pub fn TokenSession::mark_kicked(self : TokenSession, deadline : Int64) -> Bool 
 }
 
 ///|
-pub fn TokenSession::mark_superseded(self : TokenSession, deadline : Int64) -> Bool {
+pub fn TokenSession::mark_superseded(
+  self : TokenSession,
+  deadline : Int64,
+) -> Bool {
   self.mark_tombstone(@port.SessionStatus::Superseded, deadline)
 }
 
@@ -178,10 +197,13 @@ pub fn AccountFamily::empty(login_id : String) -> AccountFamily {
 }
 
 ///|
-pub fn AccountFamily::parse(login_id : String, payload : String) -> AccountFamily? {
+pub fn AccountFamily::parse(
+  login_id : String,
+  payload : String,
+) -> AccountFamily? {
   match @port.FamilyRecord::decode(payload) {
     None => None
-    Some(record) => {
+    Some(record) =>
       // 键位里的 login_id 与载荷里的必须一致，否则说明读写两侧键位串了
       if record.login_id != login_id {
         None
@@ -189,7 +211,6 @@ pub fn AccountFamily::parse(login_id : String, payload : String) -> AccountFamil
         let f : AccountFamily = { record, }
         Some(f)
       }
-    }
   }
 }
 
@@ -209,7 +230,9 @@ pub fn AccountFamily::version(self : AccountFamily) -> Int64 {
 }
 
 ///|
-pub fn AccountFamily::members(self : AccountFamily) -> Array[@port.FamilyMember] {
+pub fn AccountFamily::members(
+  self : AccountFamily,
+) -> Array[@port.FamilyMember] {
   self.record.members
 }
 
@@ -219,7 +242,10 @@ pub fn AccountFamily::all_tokens(self : AccountFamily) -> Array[String] {
 }
 
 ///|
-pub fn AccountFamily::tokens_of_device(self : AccountFamily, device : @port.Device) -> Array[String] {
+pub fn AccountFamily::tokens_of_device(
+  self : AccountFamily,
+  device : @port.Device,
+) -> Array[String] {
   self.record.tokens_of_device(device)
 }
 
@@ -229,7 +255,10 @@ pub fn AccountFamily::has_token(self : AccountFamily, token : String) -> Bool {
 }
 
 ///|
-pub fn AccountFamily::find_device(self : AccountFamily, device : @port.Device) -> @port.FamilyMember? {
+pub fn AccountFamily::find_device(
+  self : AccountFamily,
+  device : @port.Device,
+) -> @port.FamilyMember? {
   self.record.find_device(device)
 }
 
@@ -252,9 +281,14 @@ pub fn AccountFamily::add_member(
 
 ///|
 /// 摘成员；返回摘掉的条数（0 表示空操作）
-pub fn AccountFamily::remove_members(self : AccountFamily, tokens : Array[String]) -> Int {
+pub fn AccountFamily::remove_members(
+  self : AccountFamily,
+  tokens : Array[String],
+) -> Int {
   let before = self.record.members.length()
-  self.record.members = self.record.members.filter((m : @port.FamilyMember) => !tokens.contains(m.token))
+  self.record.members = self.record.members.filter((m : @port.FamilyMember) => {
+    !tokens.contains(m.token)
+  })
   let dropped = before - self.record.members.length()
   if dropped > 0 {
     self.record.version += 1L

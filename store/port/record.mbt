@@ -55,11 +55,12 @@ pub fn SessionRecord::decode(text : String) -> SessionRecord? {
       let login_id = record_field_or(f, "login", "")
       match SessionStatus::of_code(record_field_or(f, "st", "0")) {
         None => None
-        Some(status) => {
+        Some(status) =>
           if login_id.is_empty() {
             None
           } else {
-            let extra = match decode_record(record_field_or(f, "extra", "v=1")) {
+            let extra = match
+              decode_record(record_field_or(f, "extra", "v=1")) {
               None => Map([])
               Some(map) => map
             }
@@ -75,7 +76,6 @@ pub fn SessionRecord::decode(text : String) -> SessionRecord? {
             }
             Some(record)
           }
-        }
       }
     }
   }
@@ -90,14 +90,20 @@ pub(all) struct FamilyMember {
 }
 
 ///|
-pub fn FamilyMember::make(device : Device, token : String, expire_at : Int64) -> FamilyMember {
-  let m : FamilyMember = { device, token, expire_at }
+pub fn FamilyMember::make(
+  device : Device,
+  token : String,
+  expire_at : Int64,
+) -> FamilyMember {
+  let m : FamilyMember = { device, token, expire_at, }
   m
 }
 
 ///|
 pub fn FamilyMember::same(self : FamilyMember, other : FamilyMember) -> Bool {
-  self.token == other.token && self.device.id == other.device.id && self.expire_at == other.expire_at
+  self.token == other.token &&
+  self.device.id == other.device.id &&
+  self.expire_at == other.expire_at
 }
 
 ///|
@@ -115,25 +121,29 @@ pub(all) struct FamilyRecord {
 
 ///|
 pub fn FamilyRecord::empty(login_id : String) -> FamilyRecord {
-  let record : FamilyRecord = { login_id, version: 0L, members: [] }
+  let record : FamilyRecord = { login_id, version: 0L, members: [], }
   record
 }
 
 ///|
-pub fn FamilyRecord::make(login_id : String, version : Int64, members : Array[FamilyMember]) -> FamilyRecord {
-  let record : FamilyRecord = { login_id, version, members }
+pub fn FamilyRecord::make(
+  login_id : String,
+  version : Int64,
+  members : Array[FamilyMember],
+) -> FamilyRecord {
+  let record : FamilyRecord = { login_id, version, members, }
   record
 }
 
 ///|
 pub fn FamilyRecord::encode(self : FamilyRecord) -> String {
-  let items = self.members.map((m : FamilyMember) =>
+  let items = self.members.map((m : FamilyMember) => {
     encode_record([
       ("d", m.device.id),
       ("t", m.token),
       ("e", m.expire_at.to_string()),
     ])
-  )
+  })
   encode_record([
     ("login", self.login_id),
     ("ver", self.version.to_string()),
@@ -150,26 +160,29 @@ pub fn FamilyRecord::decode(text : String) -> FamilyRecord? {
       if login_id.is_empty() {
         None
       } else {
-        let members = decode_list(record_field_or(f, "members", "")).filter_map(item =>
-          match decode_record(item) {
-            None => None
-            Some(mf) => {
-              let token = record_field_or(mf, "t", "")
-              if token.is_empty() {
-                None
-              } else {
-                Some(
-                  FamilyMember::make(
-                    Device::of(record_field_or(mf, "d", DEFAULT_DEVICE_ID)),
-                    token,
-                    record_field_int64(mf, "e"),
-                  ),
-                )
+        let members = decode_list(record_field_or(f, "members", "")).filter_map(item => {
+            match decode_record(item) {
+              None => None
+              Some(mf) => {
+                let token = record_field_or(mf, "t", "")
+                if token.is_empty() {
+                  None
+                } else {
+                  Some(
+                    FamilyMember::make(
+                      Device::of(record_field_or(mf, "d", DEFAULT_DEVICE_ID)),
+                      token,
+                      record_field_int64(mf, "e"),
+                    ),
+                  )
+                }
               }
             }
-          }
+          },
         )
-        Some(FamilyRecord::make(login_id, record_field_int64(f, "ver"), members))
+        Some(
+          FamilyRecord::make(login_id, record_field_int64(f, "ver"), members),
+        )
       }
     }
   }
@@ -187,7 +200,10 @@ pub fn FamilyRecord::has_token(self : FamilyRecord, token : String) -> Bool {
 }
 
 ///|
-pub fn FamilyRecord::find_device(self : FamilyRecord, device : Device) -> FamilyMember? {
+pub fn FamilyRecord::find_device(
+  self : FamilyRecord,
+  device : Device,
+) -> FamilyMember? {
   let mut found : FamilyMember? = None
   for m in self.members {
     if m.device.id == device.id && found is None {
@@ -198,10 +214,13 @@ pub fn FamilyRecord::find_device(self : FamilyRecord, device : Device) -> Family
 }
 
 ///|
-pub fn FamilyRecord::tokens_of_device(self : FamilyRecord, device : Device) -> Array[String] {
+pub fn FamilyRecord::tokens_of_device(
+  self : FamilyRecord,
+  device : Device,
+) -> Array[String] {
   self.members
-    .filter((m : FamilyMember) => m.device.id == device.id)
-    .map((m : FamilyMember) => m.token)
+  .filter((m : FamilyMember) => m.device.id == device.id)
+  .map((m : FamilyMember) => m.token)
 }
 
 ///|

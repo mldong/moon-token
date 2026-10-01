@@ -161,7 +161,11 @@ pub fn decode_record(text : String) -> Map[String, String]? {
 }
 
 ///|
-pub fn record_field_or(fields : Map[String, String], key : String, fallback : String) -> String {
+pub fn record_field_or(
+  fields : Map[String, String],
+  key : String,
+  fallback : String,
+) -> String {
   match fields.get(key) {
     None => fallback
     Some(v) => v

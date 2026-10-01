@@ -1,4 +1,4 @@
-name = "mldong/moon-token"
+name = "mldong/moon-token-examples"
 
 version = "0.1.0"
 
@@ -10,9 +10,10 @@ readme = "README.md"
 
 repository = "https://github.com/mldong/moon-token"
 
-description = "DDD-layered login-state and session toolkit for MoonBit: aggregates, pure domain policies, async storage port, route guard DSL"
+description = "Runnable HTTP demo service for moon-token (not published): login / guard-protected endpoint / kickout / logout"
 
 import {
+  "mldong/moon-token@0.1.0",
   "mldong/moon-token-store@0.1.0",
   "moonbitlang/async@0.22.4",
 }

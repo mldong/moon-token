@@ -17,8 +17,11 @@ pub(all) struct LoginPlan {
 }
 
 ///|
-pub fn LoginPlan::make(action : LoginAction, supersede_tokens : Array[String]) -> LoginPlan {
-  let p : LoginPlan = { action, supersede_tokens }
+pub fn LoginPlan::make(
+  action : LoginAction,
+  supersede_tokens : Array[String],
+) -> LoginPlan {
+  let p : LoginPlan = { action, supersede_tokens, }
   p
 }
 
@@ -113,7 +116,7 @@ pub fn decide_renewal(input : RenewalInput) -> RenewalDecision {
         }
       }
     }
-    @port.IdleMark => {
+    @port.IdleMark =>
       if input.active_timeout_ms <= 0L {
         Skip
       } else if input.now - input.last_active >= input.active_timeout_ms {
@@ -121,7 +124,6 @@ pub fn decide_renewal(input : RenewalInput) -> RenewalDecision {
       } else {
         Skip
       }
-    }
   }
 }
 
@@ -147,7 +149,7 @@ pub fn decide_contains(
         Some(missing)
       }
     }
-    @port.Or => {
+    @port.Or =>
       if required.is_empty() {
         None
       } else if required.any((item : String) => granted.contains(item)) {
@@ -155,7 +157,6 @@ pub fn decide_contains(
       } else {
         Some(required[0])
       }
-    }
   }
 }
 
@@ -184,13 +185,13 @@ pub fn classify_access(
   status : @port.SessionStatus,
   expire_at : Int64,
   now : Int64,
-) -> @err.NotLoginReason? {
+) -> @port.NotLoginReason? {
   if status.same(@port.Kicked) {
-    Some(@err.Kicked)
+    Some(@port.KickedOut)
   } else if status.same(@port.Superseded) {
-    Some(@err.Superseded)
+    Some(@port.SupersededByLogin)
   } else if expire_at > 0L && expire_at <= now {
-    Some(@err.Expired)
+    Some(@port.SessionExpired)
   } else {
     None
   }

@@ -1,5 +1,4 @@
 import {
-  "mldong/moon-token-store/port" @port,
-  "mldong/moon-token/domain" @domain,
-  "mldong/moon-token/error" @err,
+  "mldong/moon-token-store/port",
+  "mldong/moon-token/domain",
 }

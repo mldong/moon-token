@@ -10,7 +10,7 @@ pub(all) struct Entry {
 
 ///|
 pub fn Entry::make(payload : String, expire_at : Int64) -> Entry {
-  let e : Entry = { payload, expire_at }
+  let e : Entry = { payload, expire_at, }
   e
 }
 
@@ -22,7 +22,10 @@ pub(all) struct MemoryStore {
 
 ///|
 pub fn MemoryStore::new(realm : String) -> MemoryStore {
-  let store : MemoryStore = { entries: Map([]), keys: @port.KeySpace::of(realm) }
+  let store : MemoryStore = {
+    entries: Map([]),
+    keys: @port.KeySpace::of(realm),
+  }
   store
 }
 
@@ -37,19 +40,33 @@ fn is_expired(expire_at : Int64, now : Int64) -> Bool {
 }
 
 ///|
+/// 载荷是"活着的会话"还是"已关窗的墓碑"，决定过期后怎么处置
+fn is_live_session_payload(payload : String) -> Bool {
+  match @port.SessionRecord::decode(payload) {
+    None => false
+    Some(record) => record.status.same(@port.SessionStatus::Active)
+  }
+}
+
+///|
 pub fn MemoryStore::lookup(self : MemoryStore, key : String) -> String? {
   let now = @port.now_ms()
   match self.entries.get(key) {
     None => None
-    Some(entry) => {
+    Some(entry) =>
       if is_expired(entry.expire_at, now) {
-        // 惰性过期：读到就算它没了，并当场回收，不留脏行
-        self.entries.remove(key)
-        None
+        if key.contains(":T:") && is_live_session_payload(entry.payload) {
+          // 活会话过期要照旧交回载荷，让 classify_access 报 SessionExpired；
+          // 若这里一并吞掉，"过期"与"无效"就塌成同一个原因，负向反馈的精度丢了
+          Some(entry.payload)
+        } else {
+          // 墓碑过窗与非会话记录：读到就算它没了，当场回收，不留脏行
+          self.entries.remove(key)
+          None
+        }
       } else {
         Some(entry.payload)
       }
-    }
   }
 }
 
@@ -78,7 +95,10 @@ pub fn MemoryStore::take(self : MemoryStore, key : String) -> String? {
 }
 
 ///|
-pub fn MemoryStore::load_family(self : MemoryStore, login_id : String) -> @port.FamilyRecord {
+pub fn MemoryStore::load_family(
+  self : MemoryStore,
+  login_id : String,
+) -> @port.FamilyRecord {
   match self.lookup(self.keys.family(login_id)) {
     None => @port.FamilyRecord::empty(login_id)
     Some(payload) => {
@@ -140,7 +160,10 @@ fn MemoryStore::revise_token(
 
 ///|
 /// 应用意图补丁（同一批按序生效，整体幂等）
-pub fn MemoryStore::apply_patch(self : MemoryStore, patch : @port.FamilyPatch) -> Unit {
+pub fn MemoryStore::apply_patch(
+  self : MemoryStore,
+  patch : @port.FamilyPatch,
+) -> Unit {
   match patch {
     @port.AddToken(login_id, device, token, expire_at) => {
       let fam = self.load_family(login_id)
@@ -151,49 +174,46 @@ pub fn MemoryStore::apply_patch(self : MemoryStore, patch : @port.FamilyPatch) -
         self.save_family(login_id, fam)
       }
     }
-    @port.MarkStatus(tokens, status, deadline) => {
+    @port.MarkStatus(tokens, status, deadline) =>
       for token in tokens {
         self.revise_token(token, Some(status), deadline)
       }
-    }
     @port.RemoveTokens(login_id, tokens) => {
       self.remove(tokens.map((t : String) => self.keys.token(t)))
       let fam = self.load_family(login_id)
       let before = fam.members.length()
-      fam.members = fam.members.filter((m : @port.FamilyMember) => !tokens.contains(m.token))
+      fam.members = fam.members.filter((m : @port.FamilyMember) => {
+        !tokens.contains(m.token)
+      })
       if fam.members.length() != before {
         fam.version += 1L
       }
       self.save_family(login_id, fam)
     }
-    @port.TouchExpire(tokens, expire_at) => {
+    @port.TouchExpire(tokens, expire_at) =>
       for token in tokens {
         self.revise_token(token, None, expire_at)
       }
-    }
-    @port.PutRecord(key, payload, expire_at) => {
+    @port.PutRecord(key, payload, expire_at) =>
       self.put(key, payload, expire_at)
-    }
-    @port.RemoveKeys(keys) => {
-      self.remove(keys)
-    }
+    @port.RemoveKeys(keys) => self.remove(keys)
   }
 }
 
 ///|
 pub fn MemoryStore::sweep_at(self : MemoryStore, now : Int64) -> Int {
-  let dead =
-    self.entries.to_array()
-      .filter((pair : (String, Entry)) => is_expired(pair.1.expire_at, now))
-      .map((pair : (String, Entry)) => pair.0)
+  let dead = self.entries
+    .to_array()
+    .filter((pair : (String, Entry)) => is_expired(pair.1.expire_at, now))
+    .map((pair : (String, Entry)) => pair.0)
   for key in dead {
     self.entries.remove(key)
   }
   // 反查族成员的到期不靠族键 TTL（族键本身可能还活着），这里一并回收
   let mut pruned = 0
-  let family_entries = self.entries.to_array().filter((pair : (String, Entry)) =>
-    pair.0.contains(":A:")
-  )
+  let family_entries = self.entries
+    .to_array()
+    .filter((pair : (String, Entry)) => pair.0.contains(":A:"))
   for (key, entry) in family_entries {
     let decoded = @port.FamilyRecord::decode(entry.payload)
     match decoded {
@@ -222,7 +242,12 @@ pub impl @port.TokenStore for MemoryStore with fn get(self, key) {
 }
 
 ///|
-pub impl @port.TokenStore for MemoryStore with fn set(self, key, payload, expire_at) {
+pub impl @port.TokenStore for MemoryStore with fn set(
+  self,
+  key,
+  payload,
+  expire_at,
+) {
   self.put(key, payload, expire_at)
 }
 
@@ -247,4 +272,11 @@ pub impl @port.TokenStore for MemoryStore with fn sweep(self, now) {
 }
 
 ///|
-pub extend MemoryStore with @port.TokenStore::{get, set, del, get_and_del, apply, sweep}
+pub extend MemoryStore with @port.TokenStore::{
+  get,
+  set,
+  del,
+  get_and_del,
+  apply,
+  sweep,
+}

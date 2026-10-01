@@ -1,0 +1,10 @@
+import {
+  "mldong/moon-token-store/port",
+  "mldong/moon-token/app",
+}
+
+import {
+  "mldong/moon-token-store/memory" @mem,
+  "mldong/moon-token/style",
+  "moonbitlang/async",
+} for "test"

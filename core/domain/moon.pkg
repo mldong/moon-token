@@ -1,3 +1,3 @@
 import {
-  "mldong/moon-token-store/port" @port,
+  "mldong/moon-token-store/port",
 }
