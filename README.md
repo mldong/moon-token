@@ -22,7 +22,7 @@ a route-guard DSL, and domain events. v1 ships the in-memory store; durable back
 | 可插拔存储 | async 仓储端口 + 意图补丁（`FamilyPatch`），换后端不改业务代码 |
 | 全量轮转 | `rotate` 换新整对，旧 access 与旧 refresh 同时失效；**不校验绑定 access 是否存活** |
 | 守卫 DSL | 路径模式 + 断言闭包链，纯逻辑、不绑定任何 web 框架 |
-| 领域事件 | 6 个事实事件，落库后 fire，观察者异常不影响主流程 |
+| 领域事件 | 7 个事实事件，落库后 fire，观察者异常不影响主流程 |
 | 多账号体系 | `realm` 维度实例化，键位前缀隔离 |
 
 ## 安装
@@ -87,12 +87,31 @@ let route_guard = @guard.RouteGuard::new()
   .not_match_pattern("/api/public/**")
 ```
 
-## 完整可运行示例
+## 完整可运行示例：可视化演示站
+
+一个进程、一个端口、两个门面：`/` 起是**给人看的 HTML 演示站**（MoonBit 服务端直出，
+零前端构建、零模板引擎），`/api/**` 与 `/login`、`/kick`、`/logout` 是**给脚本看的 JSON**。
+两者共用同一份站点状态与同一套 `RouteGuard`，所以 curl 登录完刷新页面就能看到新会话。
 
 ```bash
-moon run --target wasm examples/cmd/main        # 起在 127.0.0.1:18890
-bash examples/curl.sh                           # 正向 / 无 token 被拦 / 被踢的精确原因
+moon run --target wasm examples/cmd/serve     # 起在 http://127.0.0.1:18891
+bash examples/curl.sh                         # 另开终端：正向 / 精确原因 / 页面回归
+bash scripts/site-smoke.sh                    # 一把梭：自己起、自己测、自己收
 ```
+
+演示站上能直接看到的机制（都在 `examples/site/`，是库的一个普通使用者）：
+
+| 页面 | 演什么 |
+|---|---|
+| 总览 | 依赖方向图 + 实时读数（键位数、事件数、时钟模式） |
+| 键位矩阵 | `T:/A:/R:/D:/S:` 五种键的真实载荷与剩余寿命；被踢的墓碑看得见，宽窗过后被回收也看得见 |
+| 剧本剧场 | 11 个既定剧本，逐步给「调用 → 精确结果 → 这一步 store 被怎么调」；跑在独立 realm + 独立手动时钟上，不污染站点状态 |
+| 守卫模拟 | 改路径 / token / 所需权限，看裁决落到哪一条原因上（`AbsentToken`/`KickedOut`/`SessionExpired`…） |
+| 时间机器 | 真实/手动两态时钟。时效类特性（过期、活跃超时、踢人宽窗、续期节流）不能等真时间 |
+| 事件流 | 落库后 fire 的事件流水；站点故意多挂一条总会抛错的观察者，用来演"观察者坏掉不带崩主流程" |
+
+`examples/site/state.mbt` 里的 `ObservingStore` 顺带是"端口能被第三方包一层"的活证据：
+它只是 `TokenStore` 的另一个实现方，委托内存适配器并记一条调用流水，库那边一行没改。
 
 ## 设计与规范
 
