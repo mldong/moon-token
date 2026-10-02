@@ -141,7 +141,9 @@ async fn handle(
     header: fn(name) { header_value(req, name) },
   }
   match @guard.run_guard(auth, route_guard, request_fns) {
-    Ok(login_id) =>
+    // 豁免面：放行但没有主体——绝不能把路径当 login_id 往下传
+    Ok(@guard.Exempt) => reply(conn, envelope(0, "ok", text("public pass")))
+    Ok(@guard.Passed(login_id)) =>
       if path == "/logout" && meth == "POST" {
         auth.logout(header_or_empty(req, "authorization"))
         reply(conn, envelope(0, "ok", text("logged out " + login_id)))

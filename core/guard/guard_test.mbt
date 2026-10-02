@@ -61,9 +61,13 @@ async test "G2 端到端：公开端点放行、保护端点未登录拦下、�
   let base = @guard.RouteGuard::new()
     .match_pattern("/api/**")
     .not_match_pattern("/api/login")
-  // 公开端点：不在保护面 ⇒ 放行（连 token 都不看）
+  // 公开端点：不在保护面 ⇒ 放行，且**不给主体**（给了就是假 login_id）
   let public_pass = @guard.run_guard(auth, base, request("/api/login", None))
-  assert_true(public_pass is Ok(_))
+  match public_pass {
+    Ok(@guard.Exempt) => assert_true(true)
+    Ok(@guard.Passed(id)) => fail("豁免端点不该产出主体，实得 " + id)
+    Err(err) => fail("豁免端点不该被拦，实得 " + err.message())
+  }
   // 保护端点 + 无 token ⇒ 必须拦下，且报的是 AbsentToken
   let blocked = @guard.run_guard(auth, base, request("/api/user/list", None))
   match blocked {
@@ -79,7 +83,8 @@ async test "G2 端到端：公开端点放行、保护端点未登录拦下、�
   // 带 token ⇒ 放行并返回 login_id
   match
     @guard.run_guard(auth, base, request("/api/user/list", Some(result.token))) {
-    Ok(login_id) => assert_eq(login_id, "u1")
+    Ok(@guard.Passed(login_id)) => assert_eq(login_id, "u1")
+    Ok(@guard.Exempt) => fail("保护端点不该走成豁免")
     Err(err) => fail("带有效 token 应当放行，实得 " + err.message())
   }
   // 追加断言确实被执行到了
@@ -131,6 +136,10 @@ async test "R1 README 最小用法跑通 login → check → kick 精确原因 +
     route_guard,
     request("/api/public/ping", None),
   )
-  assert_true(public_pass2 is Ok(_))
+  match public_pass2 {
+    Ok(@guard.Exempt) => assert_true(true)
+    Ok(@guard.Passed(id)) => fail("豁免前缀不该产出主体，实得 " + id)
+    Err(err) => fail("豁免前缀不该被拦，实得 " + err.message())
+  }
   @port.set_clock(None)
 }

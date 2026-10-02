@@ -174,12 +174,25 @@ pub fn[S, P] extract_token(
 }
 
 ///|
-/// 守卫裁决：不在保护面内 ⇒ `None`（放行）；在 ⇒ 跑登录校验 + 追加断言，返回 login_id 或错误。
+/// 守卫裁决的两种放行，**语义不同，必须能区分**：
+/// · `Exempt` —— 不在保护面（或命中豁免），放行但**没有主体**；handler 不该拿它当 login_id
+/// · `Passed` —— 认证通过（追加断言也已跑完），带 `login_id`
+///
+/// 0.1.1 及之前这里返回的是 `Ok(String)`，豁免分支塞的是**路径**——调用方一照面就把
+/// `login_id == "/api/public/ping"` 这种假值往业务里传。已判定为缺陷并改掉（未投产，直接前进）。
+pub(all) enum GuardOutcome {
+  Exempt
+  Passed(String)
+}
+
+///|
+/// 守卫裁决：不在保护面内 ⇒ `Ok(Exempt)`（放行且无主体）；在 ⇒ 跑登录校验 + 追加断言，
+/// 成功给 `Ok(Passed(login_id))`，失败给 `Err`。
 pub async fn[S : @port.TokenStore, P] run_guard(
   auth : @app.TokenAuth[S, P],
   route_guard : RouteGuard,
   request : RequestFns,
-) -> Result[String, @port.TokenError] {
+) -> Result[GuardOutcome, @port.TokenError] {
   let path = (request.path)()
   let mut needs_auth = false
   for rule in route_guard.rules {
@@ -194,7 +207,7 @@ pub async fn[S : @port.TokenStore, P] run_guard(
     }
   }
   if !needs_auth {
-    Ok(path)
+    Ok(Exempt)
   } else {
     let token = extract_token(auth, request)
     try {
@@ -202,7 +215,7 @@ pub async fn[S : @port.TokenStore, P] run_guard(
       for check in route_guard.checks {
         (check.run)(login_id, token)
       }
-      Ok(login_id)
+      Ok(Passed(login_id))
     } catch {
       err => Err(err)
     }
