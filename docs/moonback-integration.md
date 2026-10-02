@@ -227,6 +227,70 @@ fn doc_envelope_guard(
 }
 ```
 
+## 6.1 框架契约要 HTTP 恒 200 时（`CommonResult` 那一档）
+
+mldong 系各栈的出口契约不是 REST 状态码：**HTTP 恒 200，成败在 body 的 `code` 里**
+（Java 侧 `GlobalExceptionHandler` 挂 `@ResponseStatus(HttpStatus.OK)`，前端按 `code` 分诊）。
+这一档**不需要改库**：`with_on_error` 拿到的是整个 `Responder`，状态码由框架壳自己给。
+
+```moonbit
+///|
+/// 档 B：恒 200 + 信封。码表归框架壳（库不内置任何项目的 code），这里只给形状。
+fn doc_code_200(err : @port.TokenError) -> Int {
+  match err {
+    @port.NotLogin(_) => 99990403
+    @port.Disabled(_, _) => 10041003
+    @port.NotPermission(_) => 99990406
+    @port.NotRole(_) => 99990406
+    @port.InvalidInput(_) => 99999999
+    @port.Store(_) => 99999999
+  }
+}
+
+///|
+async fn doc_on_error_200(
+  _request : @mb.Request,
+  responder : @mb.Responder,
+  err : @port.TokenError,
+) -> Unit {
+  responder.send_text(
+    "{\"code\":\{doc_code_200(err).to_string()},\"msg\":\"\{err.message()}\",\"data\":null}",
+    status=200,
+  )
+}
+```
+
+```moonbit
+async test "MB-D5 恒 200 那一档：只换响应写法，判决与精确原因都不塌" {
+  // 码表通常比原因的档位粗（Java 那侧把七档未登录全塌进 TOKEN_NOT_EXIST 一个码）：
+  // 这不丢东西，前提是精确原因留在 msg 里，别让"被踢"和"没带 token"在出口变成同一个事实
+  assert_eq(doc_code_200(@port.NotLogin(@port.KickedOut)), 99990403)
+  assert_eq(doc_code_200(@port.NotLogin(@port.AbsentToken)), 99990403)
+  assert_eq(doc_code_200(@port.NotRole("admin")), 99990406)
+  assert_eq((@port.NotLogin(@port.KickedOut)).message(), "not login: KickedOut")
+  assert_eq((@port.NotLogin(@port.AbsentToken)).message(), "not login: AbsentToken")
+  // 档位切换一个字没动判决：够权限那条照样有主体
+  let g = doc_guard("doc-200").with_on_error(doc_on_error_200)
+  let token = g.auth.login("demo-user", device="pc").token
+  assert_true(@mbguard.decide(g.auth, g.policy, doc_req("/sys/user/save", Some(token))) is Some(_))
+}
+```
+
+真服务器上的读数（一次性探针工程，装的是注册表 0.1.8 四件，wasm 档 moonrun 起服务）：
+
+| 请求 | 状态码 | body |
+|---|---|---|
+| `POST /login` | 200 | `{"code":0,"msg":"ok","data":"<token>"}` |
+| 无凭证 `GET /api/user/info` | **200** | `{"code":99990403,"msg":"not login: AbsentToken","data":null}` |
+| 假 token | **200** | `{"code":99990403,"msg":"not login: UnknownToken","data":null}` |
+| 缺权限码 `GET /sys/user/remove` | **200** | `{"code":99990406,"msg":"no permission: sys:user:remove","data":null}` |
+| 缺角色 `GET /admin/panel` | **200** | `{"code":99990406,"msg":"no role: admin","data":null}` |
+| 超管 `GET /admin/panel` | 200 | `{"code":0,"msg":"ok","data":"hello boss"}` |
+| 同名 cookie 腿 | 200 | `{"code":0,"msg":"ok","data":"hello demo-user"}` |
+
+两档选哪档都不影响判决面，`scripts/mw-smoke.sh` 那 18 格测的是**默认档**（真状态码，REST 消费方）；
+框架壳要是走恒 200，判据就该换成"逐格断 body 的 `code`"，别两边都只断"非 200"或"code≠0"。
+
 ## 7. 判据：豁免面没有主体、只问业务一轮
 
 `decide` 是判决本体，只吃"取路径 / 取头"两个闭包——写集成测试时不用真起服务器
