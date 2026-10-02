@@ -218,15 +218,36 @@ test "多码未标 mode、以及没吃推导的端点" {
 规范——RESTful 风格、kebab-case、要带模块前缀、`/users/{id}` 一律归到 `user:read`——
 把 `deriver` 换成你自己的函数就行：不用改库，也不用把自己的规范塞进例外清单。
 
-```text
-let p = @guard.RoutePolicy::new()
-p.deriver = fn(path) {
-  if path.has_prefix("/users") {
-    Some("user:read")
-  } else if path.has_prefix("/orders") {
-    Some("order:read")
-  } else {
-    None          // None ⇒ 这条推不出来，退成只验登录
+```moonbit
+fn restful_policy() -> @guard.RoutePolicy {
+  let p = @guard.RoutePolicy::new()
+  p.deriver = fn(path) {
+    if path.has_prefix("/users") {
+      Some("user:read")
+    } else if path.has_prefix("/orders") {
+      Some("order:read")
+    } else {
+      None  // None ⇒ 这条推不出来，退成只验登录
+    }
+  }
+  p
+}
+
+test "换掉 deriver，整套判定跟着变" {
+  let p = restful_policy()
+  match p.resolve("/users/42") {
+    @guard.Guarded(r) => assert_eq(r.perms, ["user:read"])
+    _ => fail("自定义推导没生效")
+  }
+  match p.resolve("/orders") {
+    @guard.Guarded(r) => assert_eq(r.perms, ["order:read"])
+    _ => fail("自定义推导没生效")
+  }
+  assert_true(p.resolve("/health") is @guard.LoginOnly)
+  // deriver 是值不是全局开关：另一个实例仍走默认规则
+  match @guard.RoutePolicy::new().resolve("/users/42") {
+    @guard.Guarded(r) => assert_eq(r.perms, ["users:42"])
+    _ => fail("默认推导被改坏了")
   }
 }
 ```
@@ -235,8 +256,8 @@ p.deriver = fn(path) {
 **这是个要留意的降级**：如果你的规范里大量路径都推不出来，正确做法是换 `deriver`
 或补例外清单，而不是让一堆端点静默停在"只验登录"——`exceptions()` 就是拿来发现这种漏的。
 
-> 上面这段是 `text` 围栏而非可跑块：`deriver` 字段还没进注册表已发布件，写成 `moonbit`
-> 会假红。发版后转成可跑块。（行为已经先被 `core/guard/policy_wbtest.mbt` 的 G5 钉住了。）
+> 这段现在是可跑的 `moonbit` 块（`deriver` 自 0.1.5 起在注册表里）。
+> 仓内还有一条同行为的单测钉在 `core/guard/policy_wbtest.mbt` 的 G5——文档与用例两处都改不动它。
 
 ## 6. 为什么不是注解
 
