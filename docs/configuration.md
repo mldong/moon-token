@@ -206,6 +206,12 @@ fn capped() -> @app.TokenConfig {
 
 async fn cap_in_action() -> (Bool, Int) raise {
   let p : P = { permissions: [], roles: [] }
+  // 时钟必须自己拨。淘汰按登录时刻定序，三次登录若挤进同一毫秒，
+  // "谁最老"就退化成按 token 字典序——断言会随机红（CI 就这么抓到过一次）。
+  // 基准要取真实量级：从 1000ms 起算的话，还原时钟后这些会话会"瞬间过期一甲子"，
+  // 断言会绿得毫无意义（第一版就是这么假绿的）。
+  let t : Array[Int64] = [1_700_000_000_000L]
+  @port.set_clock(Some(fn() { t[0] }))
   let a = @app.TokenAuth::new(
     "cap",
     capped(),
@@ -214,12 +220,17 @@ async fn cap_in_action() -> (Bool, Int) raise {
     @style.opaque_style(),
   )
   let first = a.login("u1", device="pc")
+  t[0] = t[0] + 1_000L
   a.login("u1", device="pad") |> ignore
+  t[0] = t[0] + 1_000L
   a.login("u1", device="tv") |> ignore
-  (a.is_login(first.token), (a.get_token_list_by_login_id("u1")).length())
+  // 读数要在钉住的时钟下取完，最后一步才还原
+  let out = (a.is_login(first.token), (a.get_token_list_by_login_id("u1")).length())
+  @port.set_clock(None)
+  out
 }
 
-async test "上限 2：签第三枚时最早那枚已不在线，在线列表仍只剩两枚" {
+async test "上限 2：签第三枚时最早那枚已不在线（Kick 档），在线列表仍只剩两枚" {
   let r = cap_in_action()
   assert_false(r.0)
   assert_eq(r.1, 2)
