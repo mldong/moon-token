@@ -64,6 +64,15 @@ pub fn KeySpace::ban(self : KeySpace, login_id : String) -> String {
 }
 
 ///|
+/// 授权快照（`{realm}:P:{token}`）：权限集/角色集/超管位的会话级缓存。
+/// **按 token 键，不按 login_id**：口径是"超管位和 token 一个生命周期，权限与角色码也是"。
+/// 这样一来会话终结即快照同键作废，失效也不必猜设备（族里能枚举出全部 token）。
+/// 代价是同账号多端登录各问业务一次，仍远比"每请求问一次"便宜。
+pub fn KeySpace::grants(self : KeySpace, token : String) -> String {
+  "\{self.realm}:P:\{token}"
+}
+
+///|
 /// 活会话索引（`{realm}:Z`）：在线列表枚举与 `max_sessions` 淘汰共用的一条派生索引。
 /// 无载荷、非第六类记录——权威永远在 `T:`；索引落后于事实时，枚举出来的 token 会在
 /// 批量取载荷那一轮被丢弃，宁可少几条也不返回错数据。
@@ -76,4 +85,6 @@ pub fn KeySpace::session_index(self : KeySpace) -> String {
 /// **键位预留（进过发布版本就不可回收，别拿去当空闲字母用）**：
 /// - `X:` = `token → realm` 反查（多 realm 网关场景，当前不做）
 /// - `E:` = 事件/审计流水（v1 事件只在内存回调，不落库）
+/// 已占用：`T:` 会话、`A:` 反查族、`S:` 账号会话数据、`R:` refresh 绑定、`D:` 封禁、
+/// `P:` 授权快照（按 token）、`Z` 活会话索引。
 /// 后端实现验收清单见 `docs/storage-port.md`。

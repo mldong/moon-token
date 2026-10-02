@@ -42,7 +42,19 @@ pub impl @port.PermissionProvider for View with fn get_roles(
   self.roles
 }
 
-pub extend View with @port.PermissionProvider::{get_permissions, get_roles}
+pub impl @port.PermissionProvider for View with fn is_super_admin(
+  _self,
+  _login_id,
+  _device,
+) {
+  false
+}
+
+pub extend View with @port.PermissionProvider::{
+  get_permissions,
+  get_roles,
+  is_super_admin,
+}
 
 fn view_auth(
   perms : Array[String],
@@ -84,28 +96,22 @@ async fn by_convention() -> Array[Int] raise {
   let t = auth.login("u1", device="pc").token
   [
     // ① 豁免：完全放行，且**没有主体**（返回 Exempt 而不是 Passed）
-    code_of(@guard.check_route(auth, policy, req("/api/login", None), false)),
+    code_of(@guard.check_route(auth, policy, req("/api/login", None))),
     // ③ 推导：/api/orders/page ⇒ api:orders:page，视图里有 ⇒ 放行
     code_of(@guard.check_route(
       auth,
       policy,
-      req("/api/orders/page", Some(t)),
-      false,
-    )),
+      req("/api/orders/page", Some(t)))),
     // ③ 推出来的码查不到 ⇒ NotPermission（不是 NotLogin，前端据此决定要不要跳登录）
     code_of(@guard.check_route(
       auth,
       policy,
-      req("/api/orders/save", Some(t)),
-      false,
-    )),
+      req("/api/orders/save", Some(t)))),
     // 保护端点不带 token ⇒ 登录先失败
     code_of(@guard.check_route(
       auth,
       policy,
-      req("/api/orders/page", None),
-      false,
-    )),
+      req("/api/orders/page", None))),
   ]
 }
 
@@ -138,10 +144,8 @@ async fn overrides() -> Array[Int] raise {
     code_of(@guard.check_route(
       auth,
       policy,
-      req("/api/orders/lock", Some(t)),
-      false,
-    )),
-    code_of(@guard.check_route(auth, policy, req("/api/jobs/start", Some(t)), false)),
+      req("/api/orders/lock", Some(t)))),
+    code_of(@guard.check_route(auth, policy, req("/api/jobs/start", Some(t)))),
     policy.rule_count(),
   ]
 }
@@ -173,10 +177,8 @@ async fn perms_and_roles() -> Array[Int] raise {
     code_of(@guard.check_route(
       only_perm,
       policy,
-      req("/api/orders/page", Some(t1)),
-      false,
-    )),
-    code_of(@guard.check_route(both, policy, req("/api/orders/page", Some(t2)), false)),
+      req("/api/orders/page", Some(t1)))),
+    code_of(@guard.check_route(both, policy, req("/api/orders/page", Some(t2)))),
   ]
 }
 
@@ -275,9 +277,12 @@ test "换掉 deriver，整套判定跟着变" {
 
 ## 7. 边界
 
-- **库里没有用户模型**：`is_super_admin` 由业务传。"谁是超管"是业务事实，不是鉴权事实。
+- **库里没有用户模型**：超管位由业务在 `PermissionProvider::is_super_admin` 里给。
+  "谁是超管"是业务事实，不是鉴权事实，所以 `check_route` 不收这个参数、也不替你猜。
+- **超管位来自授权快照，不回落业务库**：判定读的是 `P:` 里那一份（与 token 同寿），
+  所以一次受保护请求问业务的次数与端点数量无关，见 [权限与角色](permissions.md) §2。
 - **超管只免权限，未免登录**：没带 token 的"超管"照样过不了登录校验。
-  `super_bypass = false` 时超管也要老实查权限（生产环境建议关掉）。
+  开关是 `TokenConfig::super_bypass`（默认开），关掉后超管也要老实查权限。
 - **豁免面没有主体**：返回 `Exempt` 而不是 `Passed`。别在豁免路由上找 `login_id`——
   需要身份就别豁免它。
 - **`check_route` 不做限流、不管请求体大小**：那是中间件层的事，混进来只会让权限这层说不清。

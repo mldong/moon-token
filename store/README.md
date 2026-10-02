@@ -7,7 +7,7 @@
 
 | 包 | 装什么 |
 |---|---|
-| `port` | `TokenStore`（async trait）、`PermissionProvider`、意图补丁 `FamilyPatch`、键位 `KeySpace`、值对象（`Duration` / `Device` / `SessionStatus` / `ConcurrentPolicy` / `RenewalMode` / `MatchMode`）、错误词汇表 `TokenError`、五种记录的线格式编解码 |
+| `port` | `TokenStore`（async trait）、`PermissionProvider`、意图补丁 `FamilyPatch`、键位 `KeySpace`、值对象（`Duration` / `Device` / `SessionStatus` / `ConcurrentPolicy` / `RenewalMode` / `MatchMode`）、错误词汇表 `TokenError`、六种记录的线格式编解码 |
 | `memory` | `MemoryStore`——v1 唯一交付的后端（惰性过期两档、族清扫、`sweep`） |
 | — | 时钟槽 `set_clock` / `now_ms`（可注入，时效类用例靠它） |
 

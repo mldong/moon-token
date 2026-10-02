@@ -26,7 +26,7 @@ pub(all) struct RouteRule {
   mut pattern : String
   mut perms : Array[String]
   mut perm_mode : @port.MatchMode
-  /// 预留维度：框架现状 199 个端点里**没有一个**用 role 做端点鉴权（只有超管直通用到角色）。
+  /// 预留维度：多数框架用权限码做端点鉴权，角色只在少数场景用。
   /// 形状现在就定下来，免得将来真用时给同一个问题长出第二套机制。
   mut roles : Array[String]
   mut role_mode : @port.MatchMode
@@ -83,8 +83,6 @@ pub(all) struct RoutePolicy {
   /// 你自己的规范就换掉它（RESTful 风格、kebab-case、加模块前缀都行）。
   /// 返回 `None` 表示"这条路径推不出来"，调用方退成只验登录。
   mut deriver : (String) -> String?
-  /// 超管是否跳过权限校验（仍要求已登录）。超管身份由业务判——库里没有用户模型
-  mut super_bypass : Bool
 }
 
 ///|
@@ -94,7 +92,6 @@ pub fn RoutePolicy::new() -> RoutePolicy {
     rules: [],
     by_convention: true,
     deriver: derive_perm,
-    super_bypass: true,
   }
   p
 }
@@ -235,7 +232,7 @@ pub fn RoutePolicy::resolve(self : RoutePolicy, path : String) -> RouteAccess {
 
 ///|
 /// 装载期审计辅助之一：列出"多码但没显式声明 mode"的条目。
-/// 框架现状 16/16 都是 OR，而安全侧默认是 AND——这种条目要么真是要 AND，要么是忘了写 mode。
+/// 现实里多码八成是"任一即可"，而安全侧默认是 AND——这种条目要么真是要 AND，要么是忘了写 mode。
 /// 给出来让人看一眼，比替他猜好。
 pub fn RoutePolicy::unflagged_or(
   self : RoutePolicy,
@@ -264,13 +261,14 @@ pub fn RoutePolicy::exceptions(self : RoutePolicy, paths : Array[String]) -> Arr
 
 ///|
 /// 编排一次访问：登录永远先过（豁免除外），再按 `resolve` 的结果决定要不要查权限/角色。
-/// `is_super_admin` 由业务传——库里没有用户模型，"谁是超管"是业务事实不是鉴权事实。
+/// 超管判定读 `P:` 快照里的 `super_admin`（数由业务在 `is_super_admin` 里给），开关是
+/// `TokenConfig::super_bypass`。**调用方不再传 `is_super_admin`**：那是业务事实，
+/// 库里既拿不到也不该每请求回业务库问一次。
 /// 返回复用 `GuardOutcome`：豁免 ⇒ `Exempt`（没有主体），其余 ⇒ `Passed(login_id)`。
 pub async fn[S : @port.TokenStore, P : @port.PermissionProvider] check_route(
   auth : @app.TokenAuth[S, P],
   route_policy : RoutePolicy,
   request : RequestFns,
-  is_super_admin : Bool,
 ) -> Result[GuardOutcome, @port.TokenError] {
   let path = (request.path)()
   let access = route_policy.resolve(path)
@@ -279,20 +277,16 @@ pub async fn[S : @port.TokenStore, P : @port.PermissionProvider] check_route(
     _ =>
       try {
         let token = extract_token(auth, request)
-        let login_id = auth.check_login(token)
-        match access {
+        let login_id = match access {
           Guarded(rule) =>
-            if is_super_admin && route_policy.super_bypass {
-              ()
-            } else {
-              if !rule.perms.is_empty() {
-                auth.check_permission(token, rule.perms, mode=rule.perm_mode)
-              }
-              if !rule.roles.is_empty() {
-                auth.check_role(token, rule.roles, mode=rule.role_mode)
-              }
-            }
-          _ => ()
+            auth.check_access(
+              token,
+              rule.perms,
+              rule.perm_mode,
+              rule.roles,
+              rule.role_mode,
+            )
+          _ => auth.check_login(token)
         }
         Ok(Passed(login_id))
       } catch {

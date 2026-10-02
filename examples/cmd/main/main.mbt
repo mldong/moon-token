@@ -31,7 +31,20 @@ pub impl @port.PermissionProvider for DemoPerms with fn get_roles(
   self.roles
 }
 
-pub extend DemoPerms with @port.PermissionProvider::{get_permissions, get_roles}
+///|
+pub impl @port.PermissionProvider for DemoPerms with fn is_super_admin(
+  _self,
+  _login_id,
+  _device,
+) {
+  false
+}
+
+pub extend DemoPerms with @port.PermissionProvider::{
+  get_permissions,
+  get_roles,
+  is_super_admin,
+}
 
 ///|
 /// 与 mldong 框架契约同形的极简信封：code=0 成功，99999999 失败，msg 带精确原因

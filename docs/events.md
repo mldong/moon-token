@@ -22,7 +22,19 @@ pub impl @port.PermissionProvider for P with fn get_roles(self, _login_id, _devi
   self.roles
 }
 
-pub extend P with @port.PermissionProvider::{get_permissions, get_roles}
+pub impl @port.PermissionProvider for P with fn is_super_admin(
+  _self,
+  _login_id,
+  _device,
+) {
+  false
+}
+
+pub extend P with @port.PermissionProvider::{
+  get_permissions,
+  get_roles,
+  is_super_admin,
+}
 
 /// 收集器：结构体是引用语义，闭包里 push 进去的东西外面看得见
 pub(all) struct Sink {

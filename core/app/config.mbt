@@ -19,6 +19,10 @@ pub(all) struct TokenConfig {
   mut max_sessions : Int
   /// 被上限剔掉的那一枚怎么下线：Logout / Kick / Supersede 三档
   mut overflow_exit : @port.OverflowExit
+  /// 超管（`PermissionProvider::is_super_admin` 给真）是否跳过权限/角色校验，仍要求已登录。
+  /// 默认开：超管持有全部权限是这类框架的通行约定。关掉它 ⇒ 超管也要老老实实持有每一个权限码，
+  /// `check_permission`/`check_role`/`check_access` 与路由守卫一视同仁。
+  mut super_bypass : Bool
 }
 
 ///|
@@ -36,6 +40,7 @@ pub fn TokenConfig::default() -> TokenConfig {
     refresh_timeout: @port.Duration::from_days(30L),
     max_sessions: 12,
     overflow_exit: @port.Logout,
+    super_bypass: true,
   }
   c
 }

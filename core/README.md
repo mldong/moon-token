@@ -50,13 +50,25 @@ pub impl @port.PermissionProvider for DemoPerms with fn get_roles(self, _login_i
   self.roles
 }
 
-pub extend DemoPerms with @port.PermissionProvider::{get_permissions, get_roles}
+pub impl @port.PermissionProvider for DemoPerms with fn is_super_admin(
+  _self,
+  _login_id,
+  _device,
+) {
+  false
+}
+
+pub extend DemoPerms with @port.PermissionProvider::{
+  get_permissions,
+  get_roles,
+  is_super_admin,
+}
 
 fn new_auth() -> @app.TokenAuth[@mem.MemoryStore, DemoPerms] {
   let p : DemoPerms = { permissions: ["user:info"], roles: ["user"] }
   @app.TokenAuth::new(
     "user",                          // realm：账号体系
-    @app.TokenConfig::default(),     // 十二项配置，默认值即推荐值
+    @app.TokenConfig::default(),     // 十三项配置，默认值即推荐值
     @mem.MemoryStore::new("user"),   // 存储端口；换后端只改这一处
     p,
     @style.opaque_style(),           // token 生成；取不到平台熵即 abort
@@ -100,7 +112,7 @@ async test "被踢方拿到的是 KickedOut，不是笼统未登录" {
 | [时钟与熵源](https://github.com/mldong/moon-token/blob/master/docs/clock-and-entropy.md) | 注入时钟、三档熵源与 `abort` 守卫 |
 | [存储端口](https://github.com/mldong/moon-token/blob/master/docs/storage-port.md) | 怎么写自己的后端 |
 | [测试指南](https://github.com/mldong/moon-token/blob/master/docs/testing.md) | 三场景怎么落地、假绿长什么样 |
-| [数据模型](https://github.com/mldong/moon-token/blob/master/docs/data-model.md) | 五类记录字段、关系、TTL 公式、Redis/SQL 物理映射、变更纪律 |
+| [数据模型](https://github.com/mldong/moon-token/blob/master/docs/data-model.md) | 六类记录字段、关系、TTL 公式、Redis/SQL 物理映射、变更纪律 |
 | [常见问题](https://github.com/mldong/moon-token/blob/master/docs/faq.md) | 集群、多 realm、与 JWT 的取舍、边界 |
 
 可运行示例（含手写十行路由的 HTTP 门面与 13 步 curl 剧本）：

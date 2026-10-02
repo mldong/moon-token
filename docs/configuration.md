@@ -30,7 +30,7 @@ test "默认值读数（改任何一个都要同步改这里）" {
 }
 ```
 
-## 十二项
+## 十三项
 
 | 字段 | 默认 | 为什么是这个值 |
 |---|---|---|
@@ -46,6 +46,7 @@ test "默认值读数（改任何一个都要同步改这里）" {
 | `refresh_timeout` | 30d | 一次登录最多能续多久（每次轮转重新计时） |
 | `max_sessions` | **12**（`-1`＝不限） | 同账号活会话上限，超限按**登录时刻**先进先出注销最早的。没有上限，脚本刷登录就能让族无限增长（内存版是泄漏，Redis 版是成百上千条成员拖慢读取）。可跑示例见 §5 |
 | `overflow_exit` | `Logout` | 被上限剔掉的那一枚怎么下线：`Logout`（读作 `UnknownToken`）/ `Kick`（`KickedOut`）/ `Supersede`（`SupersededByLogin`）。可跑示例见 §5 |
+| `super_bypass` | **true** | 超管（业务 `is_super_admin` 给真）跳过权限/角色校验，**仍要求已登录**。默认开是同类框架的通行约定；关掉后 `check_permission` / `check_role` / `check_access` 与路由守卫一视同仁。判定用的数是授权快照里的 `super_admin`，不回落业务库（见 [权限与角色](permissions.md) §2） |
 
 时长一律是共享内核的 `Duration`（core 没有 time 包），读毫秒用配套的 `*_ms()`：
 
@@ -117,7 +118,19 @@ pub impl @port.PermissionProvider for P with fn get_roles(self, _login_id, _devi
   self.roles
 }
 
-pub extend P with @port.PermissionProvider::{get_permissions, get_roles}
+pub impl @port.PermissionProvider for P with fn is_super_admin(
+  _self,
+  _login_id,
+  _device,
+) {
+  false
+}
+
+pub extend P with @port.PermissionProvider::{
+  get_permissions,
+  get_roles,
+  is_super_admin,
+}
 ```
 
 ## 2. 续期节流：一个能看见的配置

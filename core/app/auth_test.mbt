@@ -46,9 +46,19 @@ pub impl @port.PermissionProvider for FixedPerms with fn get_roles(
 }
 
 ///|
+pub impl @port.PermissionProvider for FixedPerms with fn is_super_admin(
+  _self,
+  _login_id,
+  _device,
+) {
+  false
+}
+
+///|
 pub extend FixedPerms with @port.PermissionProvider::{
   get_permissions,
   get_roles,
+  is_super_admin,
 }
 
 ///|

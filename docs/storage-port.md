@@ -130,7 +130,19 @@ pub impl @port.PermissionProvider for P with fn get_roles(self, _login_id, _devi
   self.roles
 }
 
-pub extend P with @port.PermissionProvider::{get_permissions, get_roles}
+pub impl @port.PermissionProvider for P with fn is_super_admin(
+  _self,
+  _login_id,
+  _device,
+) {
+  false
+}
+
+pub extend P with @port.PermissionProvider::{
+  get_permissions,
+  get_roles,
+  is_super_admin,
+}
 
 async fn write_count_shape() -> (Int, Int) raise {
   let store = CountingStore::new("user")
@@ -162,7 +174,7 @@ async test "登录写三处；窗内再读一次不多写" {
 | `ForgetTokens` | login_id, tokens | **只摘成员、留 `T:` 墓碑**：上限的 Kick/Supersede 档靠它 |
 | `RefreshLogin` | login_id, token, login_time | 复用同 token 重新登录：移回队尾＋刷 `lt`，**不推版本号**（成员集合没变） |
 | `TouchExpire` | tokens, expire_at | 续期：只前推到期点 |
-| `PutRecord` | key, payload, expire_at | 附加数据直写（`S:` / `D:` / `R:`） |
+| `PutRecord` | key, payload, expire_at | 附加数据直写（`S:` / `D:` / `R:` / `P:`） |
 | `RemoveKeys` | keys | 删任意键 |
 
 契约三条：同一批按序生效；**整体幂等**（重复投递结果一致，版本号只随成员增删变化）；
@@ -204,6 +216,7 @@ async test "同一个补丁投两次，版本号不动" {
 {realm}:R:{refresh}      refresh 绑定    login_id + device + 绑定的 access
 {realm}:S:{login_id}     账号会话        属性表 + version（乐观锁）
 {realm}:D:{login_id}     封禁            until + reason + op + at
+{realm}:P:{token}        授权快照        perms + roles + sa + at；TTL 跟会话同寿
 {realm}:Z                活会话索引      member=token, score=lt；无载荷，Redis 版才需要建
 ```
 
@@ -256,3 +269,6 @@ test "线格式能扛住分隔符与中文" {
     三个后端对同一批数据必须给出同一个页序，否则游标会漂、翻页会重漏。
 11. `get_many` 返回顺序与入参一致、缺失项 `None`；**不要**在这里判活以外的裁决
     （索引是派生缓存，权威在 `T:`）。
+12. `P:`（授权快照）走的就是通用 `set` / `get` / `del`，**没有新端口方法**，所以它不需要新表；
+    但三条必须守住：TTL 用 `key_expire_at(expire_at)`（跟会话同寿）、会话终结时库会调 `del`
+    把它一起作废、读失败或解不出来一律当 miss（回去问业务）。拿它当裁决依据的实现的都不算通过。

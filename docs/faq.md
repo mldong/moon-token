@@ -26,7 +26,19 @@ pub impl @port.PermissionProvider for P with fn get_roles(self, _login_id, _devi
   self.roles
 }
 
-pub extend P with @port.PermissionProvider::{get_permissions, get_roles}
+pub impl @port.PermissionProvider for P with fn is_super_admin(
+  _self,
+  _login_id,
+  _device,
+) {
+  false
+}
+
+pub extend P with @port.PermissionProvider::{
+  get_permissions,
+  get_roles,
+  is_super_admin,
+}
 
 async fn shared_store() -> Bool raise {
   // 同一个 store、同一个 realm，两个实例看到同一份会话
@@ -88,8 +100,13 @@ JWT 的"服务端不存状态"是拿吊销能力换的——要么等它自然�
 
 ## Q6 为什么没有注解式鉴权？
 
-语言没有注解，也没有编译期元数据。等价物是 `RouteGuard` 的闭包链 + 处理器里显式 `check_permission`，
-见 [路由守卫](route-guard.md)。显式写法有个副产品：权限要求能在一张表里看全，不藏在方法签名上。
+MoonBit 有 `#attr(...)` 这个语法，但**自定义注解编译器不认，语言也不支持运行时反射**，
+注解只能被"自己写的编译期工具"消费。要注解式就得配三件套：codegen 工具 + 构建钩子
+（`rule` / `dev_build`）+ 生成物提交进仓库。而注解承载的本来就是 `{path → perms, mode}` 这张表，
+表定下来之后，"就地写"和"集中写"只是同一份数据的两种摆放。
+
+所以本库直接把表做成值（`RoutePolicy`），运行时等价物是 `RouteGuard` 的闭包链 + `check_route`，
+见 [路由权限策略](route-policy.md) §6。显式写法的副产品是：权限要求能在一张表里看全，不藏在方法签名上。
 
 ## Q7 `has_permission` 为什么不返回 `false` 反而抛错？
 
@@ -97,7 +114,11 @@ JWT 的"服务端不存状态"是拿吊销能力换的——要么等它自然�
 混成 `false` 之后前端就没法区分"该跳登录页"还是"该提示无权限"。
 
 要 bool 就用 `has_permission`（它只在权限这一档给 bool），要"要么过要么报错"用 `check_permission`。
-详见 [权限与角色](permissions.md) §4 与 [错误词汇表](error-vocabulary.md)。
+详见 [权限与角色](permissions.md) §5 与 [错误词汇表](error-vocabulary.md)。
+
+顺带一条同源的坑：**业务里改了某人的角色/权限，他的老会话不会自己看到新数**——
+权限/角色/超管位是跟着 token 缓存的授权快照，改完要调 `invalidate_grants(login_id)`。
+见 [权限与角色](permissions.md) §2。
 
 ## Q8 同一个人既属于 `user` 体系又属于 `admin` 体系？
 

@@ -60,7 +60,19 @@ pub impl @port.PermissionProvider for EmptyPerms with fn get_roles(
   self.roles
 }
 
-pub extend EmptyPerms with @port.PermissionProvider::{get_permissions, get_roles}
+pub impl @port.PermissionProvider for EmptyPerms with fn is_super_admin(
+  _self,
+  _login_id,
+  _device,
+) {
+  false
+}
+
+pub extend EmptyPerms with @port.PermissionProvider::{
+  get_permissions,
+  get_roles,
+  is_super_admin,
+}
 ```
 
 > 一个进程里放几个 realm 都行，它们互不干扰；但**同一个 realm 请只建一个 `TokenAuth` 实例**——

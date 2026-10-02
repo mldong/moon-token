@@ -60,6 +60,10 @@ impl @port.PermissionProvider for MyPerms with fn get_roles(self, _login_id, _de
   self.roles
 }
 
+impl @port.PermissionProvider for MyPerms with fn is_super_admin(self, _login_id, _device) {
+  false
+}
+
 // 3. 装配一个账号体系（启动期一次，无反射、无扫描魔法）
 // 实现体要在别处构造 ⇒ 必须 pub(all)；记录字面量要有已知目标类型，
 // 故先 let 绑类型再当实参传入（裸字面量直接作实参编不过，消费者实测撞过）。
@@ -128,10 +132,10 @@ bash examples/curl.sh                         # 另开终端：13 步端对端�
 | [领域事件](docs/events.md) | 7 个事件、码值表、"落库后 fire"与观察者异常处理 |
 | [存储端口](docs/storage-port.md) | `TokenStore` 契约、`FamilyPatch` 意图补丁、惰性过期两档、怎么写自己的后端 |
 | [错误词汇表](docs/error-vocabulary.md) | 7 个未登录原因 + 5 类错误，以及映射成响应码的建议 |
-| [配置与默认值](docs/configuration.md) | 十二项配置的默认值与定这个值的理由 |
+| [配置与默认值](docs/configuration.md) | 十三项配置的默认值与定这个值的理由 |
 | [时钟与熵源](docs/clock-and-entropy.md) | 可注入时钟怎么用、三档目标的熵源差异与 `abort` 守卫 |
 | [测试指南](docs/testing.md) | 三场景怎么落地：注入时钟、计数型 store、断言精确原因 |
-| [数据模型](docs/data-model.md) | 五类记录字段、关系、TTL 公式、Redis/SQL 物理映射、变更纪律 |
+| [数据模型](docs/data-model.md) | 六类记录字段、关系、TTL 公式、Redis/SQL 物理映射、变更纪律 |
 | [常见问题](docs/faq.md) | 集群、多实例、序列化兼容、与 JWT 的取舍 |
 
 ## 模块与文档在哪

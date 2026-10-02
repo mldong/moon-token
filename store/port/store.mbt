@@ -166,8 +166,15 @@ pub fn parse_cursor(text : String) -> (Int64, String)? {
 }
 
 ///|
-/// 权限源端口：业务只供数，判定归库（`core/policy`）
+/// 权限源端口：业务只供数，判定归库（`core/policy`）。
+///
+/// 三个方法的返回都进 `P:` 授权快照、按会话缓存（见 `PermissionRecord`），**每会话至多问一次**——
+/// 所以这里可以放心查库；但也因此"业务改了角色权限"不会自动生效，得由 `invalidate_grants` 或
+/// 重新登录来推翻快照。
 pub(open) trait PermissionProvider {
   async fn get_permissions(Self, String, Device?) -> Array[String] raise TokenError
   async fn get_roles(Self, String, Device?) -> Array[String] raise TokenError
+  /// 超级管理员判定：业务侧的事实（常见形状是用户表上有一个管理员类型字段）。
+  /// 库只把这个布尔原样存进快照，并在权限/角色校验前问一次——"谁是超管"没有通用推导规则。
+  async fn is_super_admin(Self, String, Device?) -> Bool raise TokenError
 }

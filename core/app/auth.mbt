@@ -357,6 +357,7 @@ async fn[S : @port.TokenStore, P] TokenAuth::evict_overflow(
       }
     }
   }
+  self.clear_grants(tokens)
   let deadline = @policy.kick_deadline(now, self.config.kick_grace_ms())
   match self.config.overflow_exit {
     @port.Logout => {
@@ -406,6 +407,8 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::logout(
       if !refresh.is_empty() {
         self.store.apply(@port.RemoveKeys([self.keys.refresh(refresh)]))
       }
+      // 快照跟着会话一起作废：下一次登录必须重新问业务
+      self.clear_grants([token])
       self.events.fire(
         @event.TokenEvent::make(
           @event.LoggedOut,
@@ -428,6 +431,7 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::logout_by_id(
   let fam = self.load_family(login_id)
   let targets = targets_of(fam, device)
   self.store.apply(@port.RemoveTokens(login_id, targets))
+  self.clear_grants(targets)
   let now = @port.now_ms()
   for token in targets {
     self.events.fire(
@@ -444,6 +448,7 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::kickout(
   device? : String = "",
 ) -> Int raise @port.TokenError {
   let fam = self.load_family(login_id)
+  self.clear_grants(targets_of(fam, device))
   self.mark_tokens(
     login_id,
     targets_of(fam, device),
@@ -459,6 +464,7 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::supersede(
   device? : String = "",
 ) -> Int raise @port.TokenError {
   let fam = self.load_family(login_id)
+  self.clear_grants(targets_of(fam, device))
   self.mark_tokens(
     login_id,
     targets_of(fam, device),
@@ -486,6 +492,9 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::disable(
       until,
     ),
   )
+  // 禁用是账号级动作：把该账号所有会话的授权快照一并作废（解禁后下一次问业务拿新数）
+  let fam = self.load_family(login_id)
+  self.clear_grants(targets_of(fam, ""))
   self.events.fire(
     @event.TokenEvent::make(@event.Disabled, login_id, "", "", now),
   )
@@ -588,33 +597,146 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::load_online(
 }
 
 ///|
-/// 取授权集：先过鉴权（含封禁与时效），再向业务端口要数
-async fn[S : @port.TokenStore, P : @port.PermissionProvider] TokenAuth::granted(
+/// 删授权快照：键按 token，所以"会话终结 ⇒ 快照作废"落在同一条键上，不需要猜设备、也不用扫前缀。
+async fn[S : @port.TokenStore, P] TokenAuth::clear_grants(
   self : TokenAuth[S, P],
-  token : String,
-  roles : Bool,
-) -> Array[String] raise @port.TokenError {
-  let login_id = self.check_login(token)
-  let dev = match self.read_session(token) {
-    None => raise @port.NotLogin(@port.UnknownToken)
-    Some(s) => s.device()
-  }
-  if roles {
-    self.perms.get_roles(login_id, Some(dev))
-  } else {
-    self.perms.get_permissions(login_id, Some(dev))
+  tokens : Array[String],
+) -> Unit raise @port.TokenError {
+  if !tokens.is_empty() {
+    self.store.del(tokens.map((t : String) => self.keys.grants(t)))
   }
 }
 
 ///|
+/// 取授权快照：命中 `P:` 就用，miss 才问业务三个方法并回填。
+/// TTL 跟这条会话同寿（拿它的 `expire_at` 走和 `T:` 同一把尺子 `key_expire_at`）。
+/// 滑动续期不搬动快照的到期，所以长会话大约每个 timeout 窗口回填一次——设计好的行为，不是缺陷。
+async fn[S : @port.TokenStore, P : @port.PermissionProvider] TokenAuth::load_grants(
+  self : TokenAuth[S, P],
+  token : String,
+  login_id : String,
+  device : @port.Device,
+  expire_at : Int64,
+) -> @port.PermissionRecord raise @port.TokenError {
+  let key = self.keys.grants(token)
+  let cached = match self.store.get(key) {
+    None => None
+    Some(payload) => @port.PermissionRecord::decode(payload)
+  }
+  match cached {
+    Some(record) => record
+    None => {
+      let perms = self.perms.get_permissions(login_id, Some(device))
+      let roles = self.perms.get_roles(login_id, Some(device))
+      let super_admin = self.perms.is_super_admin(login_id, Some(device))
+      let record = @port.PermissionRecord::make(
+        login_id,
+        perms,
+        roles,
+        super_admin,
+        @port.now_ms(),
+      )
+      self.store.apply(
+        @port.PutRecord(
+          key,
+          record.encode(),
+          self.config.key_expire_at(expire_at),
+        ),
+      )
+      record
+    }
+  }
+}
+
+///|
+/// 读授权快照（不判定）：**认证过的主体有谁、够不够什么**都从这里出发。
+/// 业务要把权限集/角色集/超管位投影给自己的接口（在线列表的超管列、前端按钮可见性）、
+/// 以及 web 中间件判超管，都读它——一次 `T:` 读 + 至多一次快照命中，零业务库往返。
+/// 返回的登录号来自 `T:`（权威），不是快照里那一份。
+pub async fn[S : @port.TokenStore, P : @port.PermissionProvider] TokenAuth::authenticate(
+  self : TokenAuth[S, P],
+  token : String,
+) -> (String, @port.PermissionRecord) raise @port.TokenError {
+  let login_id = self.check_login(token)
+  let session = match self.read_session(token) {
+    None => raise @port.NotLogin(@port.UnknownToken)
+    Some(s) => s
+  }
+  let record = self.load_grants(
+    token,
+    login_id,
+    session.device(),
+    session.expire_at(),
+  )
+  (login_id, record)
+}
+
+///|
+/// 超管是否跳过权限/角色校验（仍要求已登录）。开关在 `TokenConfig::super_bypass`。
+fn super_passes(
+  config : TokenConfig,
+  record : @port.PermissionRecord,
+) -> Bool {
+  config.super_bypass && record.super_admin
+}
+
+///|
+/// 对一枚 token 判"权限集 + 角色集"：一次认证、一次快照，两个维度各自按自己的 mode 判，
+/// 两个维度之间是 AND。超管在 `super_bypass` 开着时整段跳过。
+pub async fn[S : @port.TokenStore, P : @port.PermissionProvider] TokenAuth::check_access(
+  self : TokenAuth[S, P],
+  token : String,
+  perms : Array[String],
+  perm_mode : @port.MatchMode,
+  roles : Array[String],
+  role_mode : @port.MatchMode,
+) -> String raise @port.TokenError {
+  let (login_id, record) = self.authenticate(token)
+  if super_passes(self.config, record) {
+    login_id
+  } else {
+    match @policy.decide_permission(record.perms, perms, perm_mode) {
+      None => ()
+      Some(missing) => raise @port.NotPermission(missing)
+    }
+    match @policy.decide_role(record.roles, roles, role_mode) {
+      None => ()
+      Some(missing) => raise @port.NotRole(missing)
+    }
+    login_id
+  }
+}
+
+///|
+/// 作废授权快照。**业务改了某人的角色/权限后必须调它**，否则那个人要到重新登录才拿到新数；
+/// 这是缓存换来的代价，不是可选项。
+/// `device` 给空串＝该账号族里的全部会话，返回清掉的份数。
+pub async fn[S : @port.TokenStore, P] TokenAuth::invalidate_grants(
+  self : TokenAuth[S, P],
+  login_id : String,
+  device? : String = "",
+) -> Int raise @port.TokenError {
+  let fam = self.load_family(login_id)
+  let targets = targets_of(fam, device)
+  self.clear_grants(targets)
+  targets.length()
+}
+
+///|
+/// `has_*` 返回 bool、`check_*` 抛缺失项，两条路的判据完全同一条：
+/// **先认证（不成立照样抛鉴权错，不是返回 false）**，再读快照，超管开着 `super_bypass` 时整段放行。
 pub async fn[S : @port.TokenStore, P : @port.PermissionProvider] TokenAuth::has_permission(
   self : TokenAuth[S, P],
   token : String,
   required : Array[String],
   mode? : @port.MatchMode = @port.And,
 ) -> Bool raise @port.TokenError {
-  let granted = self.granted(token, false)
-  @policy.decide_permission(granted, required, mode) is None
+  let (_, record) = self.authenticate(token)
+  if super_passes(self.config, record) {
+    true
+  } else {
+    @policy.decide_permission(record.perms, required, mode) is None
+  }
 }
 
 ///|
@@ -624,10 +746,14 @@ pub async fn[S : @port.TokenStore, P : @port.PermissionProvider] TokenAuth::chec
   required : Array[String],
   mode? : @port.MatchMode = @port.And,
 ) -> Unit raise @port.TokenError {
-  let granted = self.granted(token, false)
-  match @policy.decide_permission(granted, required, mode) {
-    None => ()
-    Some(missing) => raise @port.NotPermission(missing)
+  let (_, record) = self.authenticate(token)
+  if super_passes(self.config, record) {
+    ()
+  } else {
+    match @policy.decide_permission(record.perms, required, mode) {
+      None => ()
+      Some(missing) => raise @port.NotPermission(missing)
+    }
   }
 }
 
@@ -638,8 +764,12 @@ pub async fn[S : @port.TokenStore, P : @port.PermissionProvider] TokenAuth::has_
   required : Array[String],
   mode? : @port.MatchMode = @port.And,
 ) -> Bool raise @port.TokenError {
-  let granted = self.granted(token, true)
-  @policy.decide_role(granted, required, mode) is None
+  let (_, record) = self.authenticate(token)
+  if super_passes(self.config, record) {
+    true
+  } else {
+    @policy.decide_role(record.roles, required, mode) is None
+  }
 }
 
 ///|
@@ -649,10 +779,14 @@ pub async fn[S : @port.TokenStore, P : @port.PermissionProvider] TokenAuth::chec
   required : Array[String],
   mode? : @port.MatchMode = @port.And,
 ) -> Unit raise @port.TokenError {
-  let granted = self.granted(token, true)
-  match @policy.decide_role(granted, required, mode) {
-    None => ()
-    Some(missing) => raise @port.NotRole(missing)
+  let (_, record) = self.authenticate(token)
+  if super_passes(self.config, record) {
+    ()
+  } else {
+    match @policy.decide_role(record.roles, required, mode) {
+      None => ()
+      Some(missing) => raise @port.NotRole(missing)
+    }
   }
 }
 
