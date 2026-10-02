@@ -681,6 +681,33 @@ fn super_passes(
 }
 
 ///|
+/// 纯判定半边：对**已经拿到**的快照做权限/角色裁决，一次存储读都不做。
+/// 拆出来是给 web 适配层用的：中间件通常已经 `authenticate` 过（要把权限集与超管位交给业务），
+/// 再走 `check_access` 就会把同一枚会话读第二遍。两个维度之间是 AND，各自按自己的 mode 判，
+/// 超管在 `super_bypass` 开着时整段跳过。
+pub fn[S, P] TokenAuth::check_principal(
+  self : TokenAuth[S, P],
+  record : @port.PermissionRecord,
+  perms : Array[String],
+  perm_mode : @port.MatchMode,
+  roles : Array[String],
+  role_mode : @port.MatchMode,
+) -> Unit raise @port.TokenError {
+  if super_passes(self.config, record) {
+    ()
+  } else {
+    match @policy.decide_permission(record.perms, perms, perm_mode) {
+      None => ()
+      Some(missing) => raise @port.NotPermission(missing)
+    }
+    match @policy.decide_role(record.roles, roles, role_mode) {
+      None => ()
+      Some(missing) => raise @port.NotRole(missing)
+    }
+  }
+}
+
+///|
 /// 对一枚 token 判"权限集 + 角色集"：一次认证、一次快照，两个维度各自按自己的 mode 判，
 /// 两个维度之间是 AND。超管在 `super_bypass` 开着时整段跳过。
 pub async fn[S : @port.TokenStore, P : @port.PermissionProvider] TokenAuth::check_access(
@@ -692,19 +719,8 @@ pub async fn[S : @port.TokenStore, P : @port.PermissionProvider] TokenAuth::chec
   role_mode : @port.MatchMode,
 ) -> String raise @port.TokenError {
   let (login_id, record) = self.authenticate(token)
-  if super_passes(self.config, record) {
-    login_id
-  } else {
-    match @policy.decide_permission(record.perms, perms, perm_mode) {
-      None => ()
-      Some(missing) => raise @port.NotPermission(missing)
-    }
-    match @policy.decide_role(record.roles, roles, role_mode) {
-      None => ()
-      Some(missing) => raise @port.NotRole(missing)
-    }
-    login_id
-  }
+  self.check_principal(record, perms, perm_mode, roles, role_mode)
+  login_id
 }
 
 ///|

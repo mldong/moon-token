@@ -149,6 +149,12 @@ async test "invalidate_grants 返回清掉的份数" {
 | `check_permission(token, required, mode?)` | `Unit` | 抛 `NotPermission(缺失项)` |
 | `has_role(token, required, mode?)` | `Bool` | 同上 |
 | `check_role(token, required, mode?)` | `Unit` | 抛 `NotRole(缺失项)` |
+| `authenticate(token)` | `(login_id, PermissionRecord)` | 抛 `NotLogin` / `Disabled` |
+| `check_principal(record, perms, perm_mode, roles, role_mode)` | `Unit` | 抛 `NotPermission` / `NotRole` |
+
+后两条是给 **web 适配层**备的：中间件通常已经 `authenticate` 过（要把权限集与超管位交给业务），
+再走 `check_access` 就会把同一枚会话读第二遍；`check_principal` 是纯判定那半边，一次存储读都不做。
+接好的那一份见 [moonback 集成](moonback-integration.md)。
 
 ```moonbit
 async fn two_ways() -> (Bool, String) raise {

@@ -23,6 +23,7 @@ restarts; transactional/Redis drivers follow the same port.
 | 可插拔存储 | async 仓储端口 + 意图补丁（`FamilyPatch`），换后端不改业务代码；已交付**内存**与**文件**两个后端 |
 | 全量轮转 | `rotate` 换新整对，旧 access 与旧 refresh 同时失效；**不校验绑定 access 是否存活** |
 | 守卫 DSL | 路径模式 + 断言闭包链，纯逻辑、不绑定任何 web 框架 |
+| web 适配 | `mldong/moon-token-moonback`：moonback 逐路由守卫、主体进请求上下文、失败只映射状态码 |
 | 领域事件 | 7 个事实事件，落库后 fire，观察者异常不影响主流程 |
 | 多账号体系 | `realm` 维度实例化，键位前缀隔离 |
 
@@ -116,6 +117,14 @@ bash examples/curl.sh                         # 另开终端：13 步端对端�
 | 12 | 同账号另起一枚 | 仍有效（默认 `Coexist`） |
 | 13 | 注销后再用 | `UnknownToken`（与「被踢」分得开：注销删键、踢人落墓碑） |
 
+要引框架的那一条腿也在 `examples/`：`cmd/moonback-demo` 把守卫挂在 moonback 的真路由上，
+逐格断 **HTTP 状态码**（401/403/404/200 分得开是适配层的合同，不是库的合同）：
+
+```bash
+moon run --target wasm examples/cmd/moonback-demo      # 起在 http://127.0.0.1:18891
+bash scripts/mw-smoke.sh                      # 另开终端：豁免/两腿/推导/例外/OR/角色/超管/注销
+```
+
 ## 文档
 
 用法、机制与取舍写在 `docs/` 下，按"先能跑通 → 再懂为什么这样设计"的顺序排：
@@ -137,12 +146,13 @@ bash examples/curl.sh                         # 另开终端：13 步端对端�
 | [时钟与熵源](docs/clock-and-entropy.md) | 可注入时钟怎么用、三档目标的熵源差异与 `abort` 守卫 |
 | [测试指南](docs/testing.md) | 三场景怎么落地：注入时钟、计数型 store、断言精确原因 |
 | [文件后端](docs/file-store.md) | 零 Redis/MySQL 的持久化：内存为主 + 写穿透、三条实测边界（fsync 代价、原子改名、键不落文件名） |
+| [moonback 集成](docs/moonback-integration.md) | 逐路由守卫 vs App 全局中间件、wasm 顶层 `let` 无熵、cookie 只是载体、失败响应怎么换 |
 | [数据模型](docs/data-model.md) | 六类记录字段、关系、TTL 公式、Redis/SQL 物理映射、变更纪律 |
 | [常见问题](docs/faq.md) | 集群、多实例、序列化兼容、与 JWT 的取舍 |
 
 ## 模块与文档在哪
 
-本仓一个 git 仓库、三个 MoonBit 模块，**发布到 mooncakes 的包根就是模块目录**，
+本仓一个 git 仓库、四个 MoonBit 模块，**发布到 mooncakes 的包根就是模块目录**，
 所以每个已发布模块自己带一份 README（mooncakes 页面渲染那份，不是本文件）：
 
 | 模块 | 目录 | 发布名 | 说明 |
@@ -150,10 +160,11 @@ bash examples/curl.sh                         # 另开终端：13 步端对端�
 | 核心 | `core/` | `mldong/moon-token` | 应用层用例、领域模型与裁决、守卫、事件、token 风格 → [模块 README](core/README.md) |
 | 存储契约 | `store/` | `mldong/moon-token-store` | `TokenStore` 端口、共享内核（值对象/键位/补丁/错误词汇/线格式）、内存适配器 → [模块 README](store/README.md) |
 | 文件后端 | `store-file/` | `mldong/moon-token-store-file` | 内存为主 + 写穿透的文件持久化 → [模块 README](store-file/README.md) |
-| 示例 | `examples/` | 不发布 | 可运行 HTTP 示例 + 13 步 curl 剧本 |
+| web 适配 | `moonback/` | `mldong/moon-token-moonback` | moonback 逐路由守卫、主体进请求上下文、状态码映射 → [模块 README](moonback/README.md) |
+| 示例 | `examples/` | 不发布 | 两个可运行服务：`cmd/main`（手写路由 + 13 步 curl 剧本）、`cmd/moonback-demo`（框架守卫 + 状态码矩阵） |
 
-`docs/` 那 16 篇**不在发布包里**（模块 zip 只含模块目录），所以三个模块 README 里的文档链接
-一律给 GitHub 绝对地址。这四处 README 与 `docs/*.md` 同受 `scripts/docs-check.sh` 管：
+`docs/` 那 17 篇**不在发布包里**（模块 zip 只含模块目录），所以四个模块 README 里的文档链接
+一律给 GitHub 绝对地址。这五处 README 与 `docs/*.md` 同受 `scripts/docs-check.sh` 管：
 里面的每个 `moonbit` 块都会被逐字灌进"只依赖注册表已发布件"的独立工程真编译真跑。
 
 ## 设计与规范
@@ -166,12 +177,14 @@ bash scripts/gate.sh     # 本地门禁：零警告 + 用例条数与矩阵一�
 
 ## 已知限制
 
-- **v1 只交付内存存储**。进程重启状态清零；持久化后端（事务型、Lua 原子型）在下一轮。
+- **存储交付了两档，都没做跨实例共享**。内存版重启即清零；文件版（`store-file`）在**同机同目录**内
+  一致，多实例共享会话要走 Redis 后端（同一端口的下一个适配器，业务代码不动）。
 - **熵源分档**：默认 `opaque_style()` 取平台熵，取不到即 `abort`（绝不静默回落到固定种子）。
   `wasm-gc` 档无平台熵源，需改用 `opaque_style_with_seed` 或 `opaque_style_with` 显式注入；
   Windows native 目标需 MSVC 工具链（`rand_s`），Linux/CI 与 wasm 档不受影响。
 - 随机流是 core 提供的 **ChaCha8（8 轮变体）**，本项目不宣称其等同 ChaCha20 强度。
-- 不做注解式鉴权（语言无注解）；二级认证、JWT 风格令牌、框架中间件适配归下一轮。
+- 不做注解式鉴权（语言无注解）；二级认证与 JWT 风格令牌归下一轮。
+  web 框架适配已交付 moonback 那一层（`mldong/moon-token-moonback`），其余框架照它的形状接。
 
 ## License
 

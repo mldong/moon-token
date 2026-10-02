@@ -1,0 +1,12 @@
+import {
+  "mldong/moon-token/app" @app,
+  "mldong/moon-token/guard" @core_guard,
+  "mldong/moon-token/style" @style,
+  "mldong/moon-token-store/memory" @mem,
+  "mldong/moon-token-store/port" @port,
+  "mldong/moon-token-moonback/guard" @mbguard,
+  "moonbitlang/async",
+  "moonbitlang/moonback" @mb,
+}
+
+pkgtype(kind: "executable")

@@ -50,5 +50,6 @@ async test "文件后端就是同一个端口" {
 
 ## 许可与家族
 
-Apache-2.0。同家族三模块：`mldong/moon-token`（核心）、`mldong/moon-token-store`（契约与内存适配器）、
-本模块（文件后端）。版本号一致，按拓扑序发布（store 先，另两个后）。
+Apache-2.0。同家族四模块：`mldong/moon-token`（核心）、`mldong/moon-token-store`（契约与内存适配器）、
+本模块（文件后端）、`mldong/moon-token-moonback`（moonback 适配层）。版本号一致，
+按拓扑序发布（store 先，其余三个后）。

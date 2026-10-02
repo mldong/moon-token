@@ -6,7 +6,7 @@ name: publish
 # job 名保持 Check / Build / Test (wasm + native)，run log 里一眼能看得出来。
 
 # 一条流水做完两件事：verify 跑检查/构建/测试（参赛验收第 5 条：CI 必须覆盖这三件事，
-# native 档只在 CI 跑，本机不试），全绿之后 publish 才把三个模块发到 mooncakes。
+# native 档只在 CI 跑，本机不试），全绿之后 publish 才把四个模块发到 mooncakes。
 # 10-02 之前这是两份 workflow（ci.yml + publish.yml）并行跑在同一枚 tag 上，
 # 发布只靠自己那道 "用例数 >= 61" 的兜底门防"带红发布"；合成一条之后 verify 是 publish 的
 # 硬前置（needs），那道兜底门就撤掉了，`moon check`/`moon test` 也不用在两处各跑一遍。
@@ -86,8 +86,8 @@ jobs:
           moon test --target native --no-render | tee native-test.txt
           # 门禁：用例条数必须与测试矩阵一致（wasm-gc 档会静默丢弃 async 用例仍 exit 0，
           # 所以"退出码 0"不构成"跑过了"的证据）
-          grep -q "Total tests: 73" wasm-test.txt
-          grep -q "Total tests: 73" native-test.txt
+          grep -q "Total tests: 83" wasm-test.txt
+          grep -q "Total tests: 83" native-test.txt
 
       # 参赛验收第 4 条"README 可复现" + 使用文档每个 moonbit 块都真编译真跑。
       # 这两步在 verify 里判的是"文档对不对得上当前这棵树"（DOCS_TARGET=source），
@@ -112,7 +112,7 @@ jobs:
           ! grep -q "Warning" check.txt
 
   publish:
-    name: Publish store + core + store-file to mooncakes
+    name: Publish store + core + store-file + moonback to mooncakes
     needs: verify
     # tag 直接发；手动触发要显式勾 publish（push 事件里 inputs 是空的，不会误发）。
     # 坑留痕：第一版这里写成 github.ref_type == 'tags'，v0.1.7 那次 tag 推送整个 publish job 被
@@ -166,8 +166,9 @@ jobs:
           echo "store = $(sed -nE 's/^version = "([^"]+)".*/\1/p' store/moon.mod | head -1)"
           echo "core  = $(sed -nE 's/^version = "([^"]+)".*/\1/p' core/moon.mod | head -1)"
           echo "store-file = $(sed -nE 's/^version = "([^"]+)".*/\1/p' store-file/moon.mod | head -1)"
+          echo "moonback = $(sed -nE 's/^version = "([^"]+)".*/\1/p' moonback/moon.mod | head -1)"
 
-      # 拓扑序：store 先，core 与 store-file 后（两者的 import pin 都指 store 同版本号，接力式）。
+      # 拓扑序：store 先，core 与 store-file 后，moonback 最后（它 pin 着 core 与 store 的同版本号，接力式）。
       # examples 不发布。
       - name: Publish store
         run: bash .github/scripts/publish-if-absent.sh store mldong/moon-token-store
@@ -177,6 +178,9 @@ jobs:
 
       - name: Publish store-file
         run: bash .github/scripts/publish-if-absent.sh store-file mldong/moon-token-store-file
+
+      - name: Publish moonback
+        run: bash .github/scripts/publish-if-absent.sh moonback mldong/moon-token-moonback
 
       # 用户那条腿：这两支脚本用不带版本的 moon add，解析到的就是刚发上去的那一代。
       # 红即"传播没到位或包体坏了"，不是"代码坏了"（代码在 verify 已经判过）。

@@ -19,6 +19,8 @@ PACKAGES = [
     ("mem", "mldong/moon-token-store/memory", "@mem"),
     ("file", "mldong/moon-token-store-file/file", None),
     ("fs", "moonbitlang/async/fs", None),
+    ("mbguard", "mldong/moon-token-moonback/guard", "@mbguard"),
+    ("mb", "moonbitlang/moonback", "@mb"),
 ]
 
 

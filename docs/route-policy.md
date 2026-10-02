@@ -274,6 +274,7 @@ test "换掉 deriver，整套判定跟着变" {
 配置文件读取消定在**应用侧**（本库不引 fs/json，保持端口零依赖）：把配置解析成
 `RoutePolicy` 的值传进来即可。任何 web 框架的适配层要做的都只是
 "取 token、取 path、把 `check_route` 的结果翻成 401/403 响应"。
+已经按这句话做好的一份是 `mldong/moon-token-moonback`，见 [moonback 集成](moonback-integration.md)。
 
 ## 7. 边界
 

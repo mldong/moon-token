@@ -1,6 +1,6 @@
-name = "mldong/moon-token-examples"
+name = "mldong/moon-token-moonback"
 
-version = "0.1.0"
+version = "0.1.8"
 
 license = "Apache-2.0"
 
@@ -10,12 +10,11 @@ readme = "README.md"
 
 repository = "https://github.com/mldong/moon-token"
 
-description = "Runnable HTTP demo services for moon-token (not published): hand-rolled router and moonback-guarded routes"
+description = "moonback adapter for moon-token: per-route auth middleware, request principal in userdata, and route-policy wiring for the moonback web framework"
 
 import {
   "mldong/moon-token@0.1.8",
   "mldong/moon-token-store@0.1.8",
-  "mldong/moon-token-moonback@0.1.8",
   "moonbitlang/async@0.22.4",
   "moonbitlang/moonback@0.8.6",
 }
