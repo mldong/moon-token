@@ -141,7 +141,7 @@ bash scripts/mw-smoke.sh                      # 另开终端：豁免/两腿/推
 | [路由权限策略](docs/route-policy.md) | 约定推导（`/api/orders/save` ⇒ `api:orders:save`）+ 例外清单覆盖；推导规则可换；perms 与 roles 的叠加规则 |
 | [领域事件](docs/events.md) | 7 个事件、码值表、"落库后 fire"与观察者异常处理 |
 | [存储端口](docs/storage-port.md) | `TokenStore` 契约、`FamilyPatch` 意图补丁、惰性过期两档、怎么写自己的后端 |
-| [错误词汇表](docs/error-vocabulary.md) | 7 个未登录原因 + 5 类错误，以及映射成响应码的建议 |
+| [错误词汇表](docs/error-vocabulary.md) | 7 个未登录原因 + 6 类错误，以及映射成响应码的建议 |
 | [配置与默认值](docs/configuration.md) | 十三项配置的默认值与定这个值的理由 |
 | [时钟与熵源](docs/clock-and-entropy.md) | 可注入时钟怎么用、三档目标的熵源差异与 `abort` 守卫 |
 | [测试指南](docs/testing.md) | 三场景怎么落地：注入时钟、计数型 store、断言精确原因 |
@@ -163,7 +163,7 @@ bash scripts/mw-smoke.sh                      # 另开终端：豁免/两腿/推
 | web 适配 | `moonback/` | `mldong/moon-token-moonback` | moonback 逐路由守卫、主体进请求上下文、状态码映射 → [模块 README](moonback/README.md) |
 | 示例 | `examples/` | 不发布 | 两个可运行服务：`cmd/main`（手写路由 + 13 步 curl 剧本）、`cmd/moonback-demo`（框架守卫 + 状态码矩阵） |
 
-`docs/` 那 17 篇**不在发布包里**（模块 zip 只含模块目录），所以四个模块 README 里的文档链接
+`docs/` 那 18 篇**不在发布包里**（模块 zip 只含模块目录），所以四个模块 README 里的文档链接
 一律给 GitHub 绝对地址。这五处 README 与 `docs/*.md` 同受 `scripts/docs-check.sh` 管：
 里面的每个 `moonbit` 块都会被逐字灌进"只依赖注册表已发布件"的独立工程真编译真跑。
 

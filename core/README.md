@@ -107,7 +107,7 @@ async test "被踢方拿到的是 KickedOut，不是笼统未登录" {
 | [权限与角色](https://github.com/mldong/moon-token/blob/master/docs/permissions.md) | SPI 供数、`has_*` 与 `check_*`、AND/OR |
 | [路由守卫](https://github.com/mldong/moon-token/blob/master/docs/route-guard.md) | 模式匹配、豁免优先级、怎么挂到 HTTP 上 |
 | [领域事件](https://github.com/mldong/moon-token/blob/master/docs/events.md) | 7 个事件、码值表、落库后 fire |
-| [错误词汇表](https://github.com/mldong/moon-token/blob/master/docs/error-vocabulary.md) | 七种原因 + 五类错误，响应码映射建议 |
+| [错误词汇表](https://github.com/mldong/moon-token/blob/master/docs/error-vocabulary.md) | 七种原因 + 六类错误，响应码映射建议 |
 | [配置与默认值](https://github.com/mldong/moon-token/blob/master/docs/configuration.md) | 每个默认值为什么是这个数 |
 | [时钟与熵源](https://github.com/mldong/moon-token/blob/master/docs/clock-and-entropy.md) | 注入时钟、三档熵源与 `abort` 守卫 |
 | [存储端口](https://github.com/mldong/moon-token/blob/master/docs/storage-port.md) | 怎么写自己的后端 |

@@ -54,7 +54,7 @@ fn auth() -> @app.TokenAuth[@mem.MemoryStore, P] {
 区分 `AbsentToken` 与 `UnknownToken` 特别值钱：前者是**部署/接线问题**，
 线上突然大量出现说明有客户端或网关把头弄丢了；后者才是用户态问题。
 
-## 2. 五类错误
+## 2. 六类错误
 
 | 变体 | 载荷 | `message()` 形状 |
 |---|---|---|
