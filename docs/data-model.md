@@ -364,10 +364,10 @@ SQL 侧**不需要**Redis 那个 `Z` 结构：`token_session` 本身就是全量
    **转换时门禁又抓出第四处**：`docs/testing.md` 里还有一个同名的装饰示例，原清单没列它——
    它测的是"写了几次"，所以两个新方法照转发但**不计进 `writes`**，否则节流那页的断言会被带偏。
 
-**下一轮（0.1.2）要一起做的一条**：`core/guard` 的 `run_guard` 豁免分支原先返回 `Ok(path)`，
-已改成 `Ok(GuardOutcome)`（`Exempt` / `Passed(login_id)`）。发版后把 `docs/route-guard.md` §1
-那段快照（现在断言 `r[2] == "/api/public/ping"`）改成两臂匹配，并删掉那里"下一版会改掉它"的
-`text` 围栏。
+**0.1.2 那轮的一条——已闭**：`run_guard` 的豁免分支原先返回 `Ok(path)`，改成 `Ok(GuardOutcome)`
+（`Exempt` / `Passed(login_id)`）之后，`docs/route-guard.md` §1 的快照同步改成两臂匹配，
+那里为过渡而写的 `text` 围栏已删。测试侧同时把三处 `is Ok(_)` 加强成"豁免必须是 Exempt、
+保护面必须是 Passed"——旧断言对假值也成立，正是它让这个缺陷活到今天。
 
 ## 9. 这份模型被什么钉住（可复跑）
 

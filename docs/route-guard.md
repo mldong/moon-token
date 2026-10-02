@@ -47,9 +47,10 @@ fn request(path : String, token : String) -> @guard.RequestFns {
 ## 1. 三条规则，一次判定
 
 ```moonbit
-fn verdict(v : Result[String, @port.TokenError]) -> String {
+fn verdict(v : Result[@guard.GuardOutcome, @port.TokenError]) -> String {
   match v {
-    Ok(x) => x
+    Ok(@guard.Exempt) => "exempt"
+    Ok(@guard.Passed(login_id)) => login_id
     Err(err) => err.message()
   }
 }
@@ -59,13 +60,13 @@ async fn three_rules() -> Array[String] raise {
   let t = a.login("u1", device="pc").token
   let g = site_guard()
   [
-    // 保护面内 + 有 token ⇒ 放行，Ok 里是 login_id
+    // 保护面内 + 有 token ⇒ Passed(login_id)
     verdict(@guard.run_guard(a, g, request("/api/user/info", t))),
     // 保护面内 + 无 token ⇒ AbsentToken
     verdict(@guard.run_guard(a, g, request("/api/user/info", ""))),
-    // 豁免臂优先级最高：即便在 /api/** 下也不问身份
+    // 豁免臂优先级最高：即便在 /api/** 下也不问身份 ⇒ Exempt（没有主体）
     verdict(@guard.run_guard(a, g, request("/api/public/ping", ""))),
-    // 压根不在保护面 ⇒ 直接放行
+    // 压根不在保护面 ⇒ 同样 Exempt
     verdict(@guard.run_guard(a, g, request("/health", ""))),
   ]
 }
@@ -74,34 +75,24 @@ async test "先匹配、后豁免、不在面内一律放行" {
   let r = three_rules()
   assert_eq(r[0], "u1")
   assert_eq(r[1], "not login: AbsentToken")
-  assert_eq(r[2], "/api/public/ping")
-  assert_eq(r[3], "/health")
+  assert_eq(r[2], "exempt")
+  assert_eq(r[3], "exempt")
 }
 ```
 
-**这里有个必须知道的形状（0.1.1 及之前的现状，已判定为缺陷）**：`run_guard` 的 `Ok` 装的是 `String`，
-但两种放行的**内容不同**——
+**两种放行由类型区分，不靠"值里装的是什么"猜**：`run_guard` 的 `Ok` 装的是 `GuardOutcome`。
 
-| 情况 | `Ok` 里的值 |
-|---|---|
-| 在保护面内且鉴权通过 | `login_id` |
-| 命中豁免臂，或压根不在保护面内 | **请求路径本身** |
+| 情况 | 结果 | handler 能拿到什么 |
+|---|---|---|
+| 在保护面内且鉴权通过 | `Passed(login_id)` | 主体身份 |
+| 命中豁免臂，或压根不在保护面内 | `Exempt` | **没有主体**——别去编一个 |
 
-所以别把 `Ok(x)` 无条件当 `login_id` 用。要么只把守卫用在保护面上（豁免路由不进这条链），
-要么在放行分支里再显式取一次身份。
-
-> **下一版会改掉它**：`Ok(String)` 换成 `Ok(GuardOutcome)`，两种放行由类型区分，不再靠"值里装的是什么"猜。
+> 0.1.1 及之前这里返回 `Ok(String)`，豁免分支塞的是**请求路径**，于是
+> `login_id == "/api/public/ping"` 这种假值能被一路传进业务。0.1.2 起由类型挡住
+> （`docs/data-model.md` §8 末记着这条变更）。
 >
-> ```text
-> pub(all) enum GuardOutcome {
->   Exempt          // 放行，但没有主体
->   Passed(String)  // 认证通过，带 login_id
-> }
-> ```
->
-> 上面那段现在只能写成 `text`：本页代码块是拿**注册表已发布件**编译的，当前代次还没有这个类型。
-> 发版后本节快照会同步改成 `Ok(@guard.Exempt)` / `Ok(@guard.Passed(login_id))` 两臂
-> （待办记在 `docs/data-model.md` §8 末）。
+> 守卫只挂在保护面上时，`Exempt` 那一臂其实永远不会走到——但**必须写**，
+> 一是让编译器替你确认"这里没有身份可用"，二是豁免规则随时可能加。
 
 ## 2. 模式匹配支持什么
 
