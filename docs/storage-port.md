@@ -213,12 +213,16 @@ test "线格式能扛住分隔符与中文" {
 2. `get` 的惰性过期按 §4 两档实现。
 3. `get_and_del` 必须原子（Redis：`GETDEL` 或 Lua；SQL：事务里 `SELECT ... FOR UPDATE` + `DELETE`）。
 4. `apply` 里每个变体都要幂等（重复投递不重复加成员、不重复推版本号）。
-   变体 `ForgetTokens` 与 `RemoveTokens` 的差别**只有留不留 `T:` 键**——上限的 Kick/Supersede 档靠它。
+   两个容易做错的变体：`ForgetTokens` 与 `RemoveTokens` 的差别**只有留不留 `T:` 键**
+   （上限的 Kick/Supersede 档靠它）；`RefreshLogin` 把成员移回队尾并刷新 `lt`，
+   但**不推版本号**——成员集合没变，不变量 3 只管增删。
 5. `sweep` 返回**真实**清掉的条数——用它断言"跑一万次登录登出，键数不单调增长"。
 6. 键前缀照 §5，realm 拼在最前面，别自己发明分隔符。
 7. **`T:` 键的 TTL 必须设到 `expire_at + kick_grace`**（`docs/data-model.md` §4.2）。少设了，
    `KickedOut` / `SupersededByLogin` 会静默退化成 `UnknownToken`，而且**不会有任何测试变红**——
    内存版与后端测的是同一套语义断言，只有真实时间下才暴露。
+   加窗只加在**活会话**上：`MarkStatus` 传进来的到期时刻已经是"保留窗截止"，再套一次就是双份窗
+   （本库把这条收在 `TokenConfig::key_expire_at`，内存版与后端同一个函数，A29 钉住）。
 8. **族的写不许退化成整块覆盖**。两台设备并发登录时"读全族→改→整块 set"会互相丢成员；
    必须带 `version` 做 CAS（`FamilyRecord.version` / `AccountSessionRecord.version`），失败重读重试。
 9. **序列化只有一条路**：载荷一律走共享内核的线格式（`v=1|k=v|…`，键与值都转义），

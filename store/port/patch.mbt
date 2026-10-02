@@ -10,6 +10,10 @@ pub(all) enum FamilyPatch {
   MarkStatus(Array[String], SessionStatus, Int64)
   /// 摘除成员并删对应 `T:` 键：login_id, tokens
   RemoveTokens(String, Array[String])
+  /// 复用同一枚 token 重新登录：login_id, token, 新的登录时刻。
+  /// 把该成员移到队尾并刷新 `lt`，**不推版本号**（成员集合没变，不变量 3 只管增删）。
+  /// 存在理由：上限是"先进先出"，天天复登的设备必须回到队列尾部，否则它会被当成最老的先剔掉。
+  RefreshLogin(String, String, Int64)
   /// 只摘成员、**保留 `T:` 键**：login_id, tokens。
   /// 存在理由：`max_sessions` 选 Kick/Supersede 档时，被剔的那枚要留墓碑让对端读到精确原因，
   /// 但它已经不算"这个账号还活着的会话"——成员不摘掉，上限就会把保留窗内的墓碑数进去。

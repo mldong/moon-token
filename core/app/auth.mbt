@@ -116,7 +116,11 @@ async fn[S : @port.TokenStore, P] TokenAuth::issue(
     token, login_id, device, now, expire_at,
   )
   session.set_refresh_token(refresh_token)
-  self.store.set(self.keys.token(token), session.payload(), expire_at)
+  self.store.set(
+    self.keys.token(token),
+    session.payload(),
+    self.config.key_expire_at(expire_at),
+  )
   self.store.set(
     self.keys.refresh(refresh_token),
     @port.RefreshRecord::make(login_id, device.id, token).encode(),
@@ -206,6 +210,9 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::login(
         Some(session) =>
           if @policy.classify_access(session.status(), session.expire_at(), now)
             is None {
+            // 复用同一枚 token 也算"又登录了一次"：成员要移回队尾。
+            // 不刷新的话，一台天天复登的老设备在先进先出里永远排最前，会被上限先剔掉
+            self.store.apply(@port.RefreshLogin(login_id, existing, now))
             LoginResult::make(
               existing,
               login_id,
@@ -269,7 +276,11 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::check_login(
     @policy.Renew(target) => {
       session.touch(now)
       session.renew(now, target)
-      self.store.set(self.keys.token(token), session.payload(), target)
+      self.store.set(
+        self.keys.token(token),
+        session.payload(),
+        self.config.key_expire_at(target),
+      )
     }
     @policy.IdleExpired => raise @port.NotLogin(@port.ActiveTimeout)
   }
@@ -723,7 +734,7 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::update_token_session(
       self.store.set(
         self.keys.token(token),
         session.payload(),
-        session.expire_at(),
+        self.config.key_expire_at(session.expire_at()),
       )
     }
   }

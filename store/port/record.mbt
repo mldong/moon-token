@@ -248,6 +248,34 @@ pub fn FamilyRecord::without_expired(
 }
 
 ///|
+/// 复用同一枚 token 重新登录：刷新该成员的 `lt` 并移到队尾，**不推版本号**（成员集合没变）。
+/// 返回是否真找到了那枚成员——找不到就是空操作，交给调用方决定要不要报错。
+pub fn FamilyRecord::refresh_login(
+  self : FamilyRecord,
+  token : String,
+  login_time : Int64,
+) -> Bool {
+  let mut found = false
+  let kept : Array[FamilyMember] = []
+  let moved : Array[FamilyMember] = []
+  for m in self.members {
+    if m.token == token && !found {
+      found = true
+      moved.push(FamilyMember::make(m.device, m.token, m.expire_at, login_time))
+    } else {
+      kept.push(m)
+    }
+  }
+  if found {
+    for m in moved {
+      kept.push(m)
+    }
+    self.members = kept
+  }
+  found
+}
+
+///|
 pub fn FamilyRecord::max_expire(self : FamilyRecord) -> Int64 {
   let mut best = 0L
   for m in self.members {

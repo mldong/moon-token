@@ -204,6 +204,13 @@ pub fn MemoryStore::apply_patch(
       // 与 RemoveTokens 的唯一差别：不动 `T:` 键，墓碑要留着让对端读到精确原因
       self.save_family(login_id, fam)
     }
+    @port.RefreshLogin(login_id, token, login_time) => {
+      let fam = self.load_family(login_id)
+      if fam.refresh_login(token, login_time) {
+        // 移到队尾不增不减成员 ⇒ 不推版本号（不变量 3）
+        self.save_family(login_id, fam)
+      }
+    }
     @port.TouchExpire(tokens, expire_at) =>
       for token in tokens {
         self.revise_token(token, None, expire_at)

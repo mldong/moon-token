@@ -71,6 +71,23 @@ pub fn TokenConfig::refresh_timeout_ms(self : TokenConfig) -> Int64 {
 }
 
 ///|
+/// `T:` 键实际该存多久：活会话的载荷到期时刻之后**再留一个保留窗**。
+/// 不加的话，一次显式 `sweep` 会把"刚过时效、本该报 `SessionExpired`"的会话连键删掉，
+/// 对端只剩 `UnknownToken`——§4.2 那套两档读取就兑现不了了（惰性读有特例兜着，所以只有
+/// 跑 `sweep` 的服务会踩，最难查）。
+/// 墓碑**不适用**：`MarkStatus` 传进来的到期时刻已经是"保留窗截止"，再加一次就是双份。
+pub fn TokenConfig::key_expire_at(
+  self : TokenConfig,
+  expire_at : Int64,
+) -> Int64 {
+  if expire_at <= 0L {
+    expire_at
+  } else {
+    expire_at + self.kick_grace_ms()
+  }
+}
+
+///|
 /// 签发结果。`reused` 为真表示 Shared 策略下复用了既有 token，未新签。
 pub(all) struct LoginResult {
   token : String

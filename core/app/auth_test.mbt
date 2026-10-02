@@ -589,3 +589,38 @@ async test "A28 封禁记录带操作人与创建时刻" {
     Some(ban) => assert_eq(ban.operator, "")
   }
 }
+
+///|
+async test "A29 回归：显式 sweep 之后，刚过时效的会话仍报 SessionExpired 而不是 UnknownToken" {
+  let cfg = @app.TokenConfig::default()
+  cfg.timeout = @port.Duration::from_millis(1_000L)
+  cfg.kick_grace = @port.Duration::from_millis(5_000L)
+  let auth = new_auth("user", cfg, [], [])
+  let login = auth.login("u1", device="pc")
+  advance(2_000L)
+  // 过时效但仍在保留窗内：`T:` 键的 TTL 含保留窗，所以 sweep 不该把它连键删掉
+  auth.sweep() |> ignore
+  assert_eq(access_code(auth, login.token), @port.SessionExpired.code())
+}
+
+///|
+async test "A30 Shared 复用同 token 会刷新登录序：上限剔的是久没复登的那台" {
+  let cfg = @app.TokenConfig::default()
+  cfg.concurrent = @port.Shared
+  cfg.max_sessions = 2
+  let auth = new_auth("user", cfg, [], [])
+  let old = auth.login("u1", device="d1")
+  advance(10L)
+  let mid = auth.login("u1", device="d2")
+  advance(10L)
+  // d1 天天复登：复用同一枚 token，但登录序必须回到队尾
+  let again = auth.login("u1", device="d1")
+  assert_eq(again.token, old.token)
+  assert_true(again.reused)
+  advance(10L)
+  let third = auth.login("u1", device="d3")
+  // 2 个活成员 + 新签 1 > 2 ⇒ 剔最老的：是久没动静的 d2，不是天天复登的 d1
+  assert_eq(access_code(auth, mid.token), @port.UnknownToken.code())
+  assert_eq(access_code(auth, again.token), -1)
+  assert_eq(access_code(auth, third.token), -1)
+}
