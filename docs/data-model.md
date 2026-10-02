@@ -51,11 +51,13 @@ realm（命名空间＝每个键的前缀，不是实体、不是表）
 | last_active | `la` | Int64 ms | 是 | `IdleMark` 的判据 |
 | status | `st` | 0/1/2 | 是 | 0 Active / 1 Kicked / 2 Superseded |
 | refresh_token | `refresh` | String | 是 | **FK → `R`** |
-| ip | `ip` | String | 是 | 登录来源 IP；空串＝未提供。**一等列，可检索** |
-| user_agent | `ua` | String | 是 | 客户端标识；空串＝未提供。可检索 |
-| extra | `extra` | Map\<String,String\> | 是 | 自由扩展，**不可检索**（§4.4） |
+| extra | `extra` | Map\<String,String\> | 是 | 自由扩展，**不可检索**（§4.4）；登录来源 `ip` / `ua` 就在这里（§7.9） |
 
 TTL 公式：活会话＝`expire_at`；落墓碑时改写为 `now + kick_grace`。
+
+> 这张表钉的是**目标形状**，允许与当前代码不一致，但**每一处不一致都必须就地标出 §8 的编号**——
+> 没标、代码里又没有的字段就是文档在撒谎。曾经列过 `ip` / `user_agent` 两行（当一等列），
+> 那是 §7.9 改判前的残留、代码里从来没有、也没标编号，已删。
 
 ### `A` 反查族 — 键 `{realm}:A:{login_id}`
 
@@ -63,7 +65,7 @@ TTL 公式：活会话＝`expire_at`；落墓碑时改写为 `now + kick_grace`�
 |---|---|---|---|
 | login_id | `login` | String | **PK**；必须与键里的一致，否则整条拒读 |
 | version | `ver` | Int64 | 只随成员增删单调递增；判重幂等靠它 |
-| members | `members` | 数组 | 每项 `{d: device, t: token, e: expire_at, lt: login_time}` |
+| members | `members` | 数组 | 每项 `{d: device, t: token, e: expire_at, lt: login_time}`；**`lt` 代码里还没有，见 §8.6** |
 
 TTL 公式：`max(成员 e)`；族空 ⇒ 删键。
 
