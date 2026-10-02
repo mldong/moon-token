@@ -77,6 +77,21 @@ pub impl @port.TokenStore for CountingStore with fn sweep(self, now) {
   self.inner.sweep(now)
 }
 
+pub impl @port.TokenStore for CountingStore with fn get_many(self, keys) {
+  self.reads += 1
+  self.inner.get_many(keys)
+}
+
+pub impl @port.TokenStore for CountingStore with fn list_sessions(
+  self,
+  filter,
+  cursor,
+  limit,
+) {
+  self.reads += 1
+  self.inner.list_sessions(filter, cursor, limit)
+}
+
 pub extend CountingStore with @port.TokenStore::{
   get,
   set,
@@ -84,8 +99,15 @@ pub extend CountingStore with @port.TokenStore::{
   get_and_del,
   apply,
   sweep,
+  get_many,
+  list_sessions,
 }
 ```
+
+装饰器要**八个方法全转发**，漏两个就直接编译不过（`Type ... does not implement trait`）——
+这条是 0.1.1 才收紧的：那两个新读侧方法是 trait 的一部分，不是可选扩展。
+`get_many` / `list_sessions` 都算一次"读"，所以计数各加 1；这也说明为什么在线列表
+走"枚举一页 + 批量取详情"是**两次读**，而不是 N+1 次。
 
 三处形状必须照做（都是编译器教的）：
 
@@ -134,9 +156,11 @@ async test "登录写三处；窗内再读一次不多写" {
 
 | 变体 | 载荷 | 语义 |
 |---|---|---|
-| `AddToken` | login_id, device, token, expire_at | 族里加成员（已在则不动版本号＝幂等） |
+| `AddToken` | login_id, device, token, expire_at, login_time | 族里加成员（已在则不动版本号＝幂等） |
 | `MarkStatus` | tokens, status, deadline | 落墓碑并改写到期时刻——"被踢方拿到精确原因"靠它 |
 | `RemoveTokens` | login_id, tokens | 摘成员 + 删 `T:` 键 |
+| `ForgetTokens` | login_id, tokens | **只摘成员、留 `T:` 墓碑**：上限的 Kick/Supersede 档靠它 |
+| `RefreshLogin` | login_id, token, login_time | 复用同 token 重新登录：移回队尾＋刷 `lt`，**不推版本号**（成员集合没变） |
 | `TouchExpire` | tokens, expire_at | 续期：只前推到期点 |
 | `PutRecord` | key, payload, expire_at | 附加数据直写（`S:` / `D:` / `R:`） |
 | `RemoveKeys` | keys | 删任意键 |
@@ -147,7 +171,7 @@ async test "登录写三处；窗内再读一次不多写" {
 ```moonbit
 async fn patch_is_idempotent() -> Bool raise {
   let store = CountingStore::new("idem")
-  let patch = @port.AddToken("u9", @port.Device::of("pc"), "tok-fixed", 9_000L)
+  let patch = @port.AddToken("u9", @port.Device::of("pc"), "tok-fixed", 9_000L, 1_000L)
   store.apply(patch)
   let v1 = store.inner.load_family("u9").version
   store.apply(patch)

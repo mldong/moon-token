@@ -353,16 +353,16 @@ SQL 侧**不需要**Redis 那个 `Z` 结构：`token_session` 本身就是全量
 | 8.9 | `sweep` 与 §4.2 的冲突：内存版 `T:` 键原先按 `expire_at` 存 TTL，一次显式 `sweep` 会把"刚过时效、本该报 `SessionExpired`"的活会话连键删掉，对端读成 `UnknownToken` | 惰性读路径有特例兜着，所以只有跑 `sweep` 的服务会踩——最难查的那种 | **done**（`TokenConfig::key_expire_at` 在三个 `T:` 写点统一加保留窗；A29 钉住） |
 | 8.10 | `Shared` 复用同一枚 token 时刷新 `lt` 并把成员移回队尾（新增 `FamilyPatch::RefreshLogin`） | 不刷新的话，一台天天复登的老设备在先进先出里永远排最前、会被上限先剔掉——与参照系语义相反 | **done**（A30 钉住；移动位置**不推**版本号） |
 
-**发版那一轮必须一起做的两件事**（现在做会假绿，所以留在这里）：
+**发版那一轮要一起做的三条"假绿窗口"——已随 0.1.1 闭掉**（0.1.1 上 mooncakes 之后，
+`docs-check.sh` 的 `moon add` 自动解析到新代次，旧形状当场变红，正是预期的行为）：
 
-1. §9 那条快照里的 `FamilyMember::make(...)` 还是三参——`docs-check.sh` 是拿**注册表已发布件**
-   （`moon add` 不带版本 ⇒ 当前 0.1.0）编译的，所以本地签名改成四参之后门禁照旧绿。
-   一代发布之后 `moon add` 解析到新版，这条快照会当场变红。
-2. `docs/configuration.md` 的"八项"、`docs/storage-port.md` 的"六个方法"已随本轮改成十项／八个方法，
-   但**引用新字段与新方法的示例只能写成非 `moonbit` 围栏**（同理：0.1.0 上编不过）。
-   发版后要把它们转成可跑块，转完才算这条腿真闭上。
-3. `docs/storage-port.md` §2 那个 `CountingStore` 装饰示例只转发了六个方法；新版 trait 是八个，
-   发版后它会编译失败。它是"第三方能装饰这个端口"的活证据，所以要补齐两法而不是删掉。
+1. §9 的族记录快照：`FamilyMember::make` 三参 → 四参，并补一条 `login_time` 往返断言
+   （它现在真的在钉 `lt` 这个键名，而不只是钉旧形状）。
+2. `docs/configuration.md` §5 与 `docs/session-management.md` §7 的示例：从 `text` 围栏转成
+   `moonbit` 可跑块——上限那一段现在会真跑一次"签第三枚、最早那枚已不在线"。
+3. `docs/storage-port.md` §2 的 `CountingStore` 装饰示例补齐两个读侧方法（八个全转发）。
+   **转换时门禁又抓出第四处**：`docs/testing.md` 里还有一个同名的装饰示例，原清单没列它——
+   它测的是"写了几次"，所以两个新方法照转发但**不计进 `writes`**，否则节流那页的断言会被带偏。
 
 ## 9. 这份模型被什么钉住（可复跑）
 
@@ -389,7 +389,9 @@ test "线格式字段名是契约：改名即迁移" {
 
 test "族记录往返保形状；键位串了必须拒读" {
   let fam = @port.FamilyRecord::empty("u1")
-  fam.members.push(@port.FamilyMember::make(@port.Device::of("pc"), "tok-1", 9000L))
+  fam.members.push(
+    @port.FamilyMember::make(@port.Device::of("pc"), "tok-1", 9000L, 1234L)
+  )
   fam.version += 1L
   let blob = fam.encode()
   match @port.FamilyRecord::decode(blob) {
@@ -399,6 +401,7 @@ test "族记录往返保形状；键位串了必须拒读" {
       assert_eq(r.version, 1L)
       assert_eq(r.members.length(), 1)
       assert_eq(r.members[0].device.id, "pc")
+      assert_eq(r.members[0].login_time, 1234L)   // lt 是上限淘汰的排序键，必须能往返
     }
   }
   // 域层的守卫：键里的 login_id 与载荷里的不一致 ⇒ 整条拒读（宁可读成"无族"）

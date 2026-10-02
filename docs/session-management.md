@@ -216,19 +216,46 @@ async test "宽窗内 KickedOut、窗外 UnknownToken，sweep 返回被回收的
 §1 那两个方法都是**按账号**查的（`get_token_list_by_login_id` / `get_device_list`）。
 后台的"在线用户"页要的是反过来：先枚举，再看是谁。为此端口补了两个读侧方法，应用层开了两个入口。
 
+```moonbit
+async fn enumerate_online() -> (Int, Int, Int, Int) raise {
+  let a = auth()
+  a.login("u1", device="pc") |> ignore
+  let second = a.login("u2", device="pad")
+  // 第一步：只拿索引级条目（token / login_id / device / 登录时刻 / 到期），登录时刻反序
+  let page = a.list_online(@port.SessionFilter::all(), "", 1)
+  // 第二步：只取这一页的详情，一次批量往返
+  let rows = a.load_online(page)
+  // 翻页：把上一页的 next_cursor 原样传进来；返回空串表示到底了
+  let next = a.list_online(@port.SessionFilter::all(), page.next_cursor, 1)
+  let only_u1 = a.list_online(@port.SessionFilter::make("u1", ""), "", 10)
+  let head = (page.items)[0]
+  let head_is_newest = if head.token == second.token { 1 } else { 0 }
+  (
+    page.items.length() + next.items.length(),
+    head_is_newest,
+    rows.length(),
+    only_u1.items.length(),
+  )
+}
+
+async test "在线枚举：翻页不重不漏、详情一次批量取、条件只认精确字段" {
+  let r = enumerate_online()
+  assert_eq(r.0, 2)
+  assert_eq(r.1, 1)
+  assert_eq(r.2, 1)
+  assert_eq(r.3, 1)
+}
+```
+
+详情那一轮长这样（`record` 就是 `T:` 的载荷，展示字段从 `extra` 里取，本库不解释它）：
+
 ```text
-// 第一步：只拿索引级条目（token / login_id / device / 登录时刻 / 到期），登录时刻反序
-let page = auth.list_online(@port.SessionFilter::all(), "", 20)
-// 第二步：只取这一页的详情，一次批量往返
-let rows = auth.load_online(page)
 for row in rows {
   match row.session {
-    None => ()                              // 索引落后于事实：这条已经不在线
-    Some(record) => record.extra["ip"]      // 展示字段走 extra，本库不解释（§配置文档）
+    None => ()                          // 索引落后于事实：这条已经不在线
+    Some(record) => record.extra["ip"]  // 业务自己塞的展示字段
   }
 }
-// 翻页：把上一页的 next_cursor 原样传进来；返回空串表示到底了
-let next = auth.list_online(@port.SessionFilter::make("u1", ""), page.next_cursor, 20)
 ```
 
 四条口径，都是刻意定的：
@@ -246,6 +273,6 @@ let next = auth.list_online(@port.SessionFilter::make("u1", ""), page.next_curso
 被封禁的账号**照常出现在这一页里**（§4 的封禁压在会话之上，不改写会话）；
 要"封禁即不在线"，业务侧过滤或在封禁时补一次 `logout_by_id`。
 
-> 上面这段是 `text` 围栏而非 `moonbit`：`list_online` / `load_online` 尚未发版，
-> 而本页代码块要过"对注册表已发布件真编译"的门禁。发版后转成可跑块，
-> 待办记在 `docs/data-model.md` §8 末。
+> 上面第一段是 `moonbit` 围栏，会被 `scripts/docs-check.sh` 抽进独立工程**对注册表已发布件真编译真跑**；
+> 第二段留 `text` 是因为它只是形状示意（`rows` 来自上一段的局部绑定，抽成独立包接不上）。
+> 0.1.1 之前这两段都只能是 `text`——那时注册表里的代次还没有这两个方法。

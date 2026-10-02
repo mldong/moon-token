@@ -1,9 +1,7 @@
 # 配置与默认值
 
 `TokenConfig` 十二个字段，每个默认值都不是随手取的——这一页把"值是多少"和"为什么是这个值"放在一起。
-本页代码块由 `scripts/docs-check.sh` 逐块真编译真跑（对注册表已发布件），
-所以**只有已发布的那十个字段能被断言**；`max_sessions` 与 `overflow_exit` 是本轮新增、尚未发版，
-它们的示例写在 §5，用非 `moonbit` 围栏（发版后要转成可跑块，见 `docs/data-model.md` §8 末）。
+本页代码块由 `scripts/docs-check.sh` 逐块真编译真跑（对注册表已发布件）。
 
 ```moonbit
 fn defaults() -> @app.TokenConfig {
@@ -20,6 +18,8 @@ test "默认值读数（改任何一个都要同步改这里）" {
   assert_eq(c.renew_min_interval.to_millis(), 60_000L)
   assert_eq(c.kick_grace.to_millis(), 300_000L)
   assert_eq(c.refresh_timeout.to_millis(), 2_592_000_000L)
+  assert_eq(c.max_sessions, 12)
+  assert_eq(c.overflow_exit.code(), "logout")
   // 枚举没 derive(Eq)：判等只能 match，或比 code()/to_code() 这类读数
   let is_slide = match c.renewal {
     @port.SlideOnAccess => true
@@ -44,8 +44,8 @@ test "默认值读数（改任何一个都要同步改这里）" {
 | `kick_grace` | 5min | 被踢的墓碑保留多久。太短→用户看到的提示从"被踢"退化成"未登录"；太长→状态堆积 |
 | `concurrent` | `Coexist` | 多端同时在线是常态，默认不该跟用户作对。单点登录请显式改 `Supersede` |
 | `refresh_timeout` | 30d | 一次登录最多能续多久（每次轮转重新计时） |
-| `max_sessions` | **12**（`-1`＝不限） | 同账号活会话上限，超限按**登录时刻**先进先出注销最早的。没有上限，脚本刷登录就能让族无限增长（内存版是泄漏，Redis 版是成百上千条成员拖慢读取）。**未发版**，见 §5 |
-| `overflow_exit` | `Logout` | 被上限剔掉的那一枚怎么下线：`Logout`（读作 `UnknownToken`）/ `Kick`（`KickedOut`）/ `Supersede`（`SupersededByLogin`）。**未发版**，见 §5 |
+| `max_sessions` | **12**（`-1`＝不限） | 同账号活会话上限，超限按**登录时刻**先进先出注销最早的。没有上限，脚本刷登录就能让族无限增长（内存版是泄漏，Redis 版是成百上千条成员拖慢读取）。可跑示例见 §5 |
+| `overflow_exit` | `Logout` | 被上限剔掉的那一枚怎么下线：`Logout`（读作 `UnknownToken`）/ `Kick`（`KickedOut`）/ `Supersede`（`SupersededByLogin`）。可跑示例见 §5 |
 
 时长一律是共享内核的 `Duration`（core 没有 time 包），读毫秒用配套的 `*_ms()`：
 
@@ -192,19 +192,39 @@ fn auth() -> @app.TokenAuth[@mem.MemoryStore, P] {
 }
 ```
 
-## 5. 会话上限与在线枚举（本轮新增，尚未发版）
+## 5. 会话上限与在线枚举
 
 两项配置与两个端口方法是一组：上限管"一个账号能攒多少枚活会话"，枚举管"把在线的人查出来"。
 
-```text
-let cfg = @app.TokenConfig::default()
-cfg.max_sessions = 3            // -1 ＝ 不限
-cfg.overflow_exit = @port.Kick  // 被剔的那枚要能读到"被踢"，而不是退化成"未登录"
-```
+```moonbit
+fn capped() -> @app.TokenConfig {
+  let cfg = @app.TokenConfig::default()
+  cfg.max_sessions = 2            // -1 ＝ 不限
+  cfg.overflow_exit = @port.Kick  // 被剔的那枚要能读到"被踢"，而不是退化成"未登录"
+  cfg
+}
 
-写成非 `moonbit` 围栏是刻意的：门禁编译的是注册表**已发布件**，当前代次还没有这两个字段，
-放进可跑块会假红；不写又等于文档缺席。发版后要把它转成 `moonbit` 并补默认值断言
-（清单在 `docs/data-model.md` §8 末）。
+async fn cap_in_action() -> (Bool, Int) raise {
+  let p : P = { permissions: [], roles: [] }
+  let a = @app.TokenAuth::new(
+    "cap",
+    capped(),
+    @mem.MemoryStore::new("cap"),
+    p,
+    @style.opaque_style(),
+  )
+  let first = a.login("u1", device="pc")
+  a.login("u1", device="pad") |> ignore
+  a.login("u1", device="tv") |> ignore
+  (a.is_login(first.token), (a.get_token_list_by_login_id("u1")).length())
+}
+
+async test "上限 2：签第三枚时最早那枚已不在线，在线列表仍只剩两枚" {
+  let r = cap_in_action()
+  assert_false(r.0)
+  assert_eq(r.1, 2)
+}
+```
 
 三档的差别只在**被剔方读到什么**（发起方那边都是正常登录成功）：
 

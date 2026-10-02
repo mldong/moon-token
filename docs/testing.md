@@ -167,7 +167,30 @@ pub impl @port.TokenStore for CountingStore with fn sweep(self, now) {
   self.inner.sweep(now)
 }
 
-pub extend CountingStore with @port.TokenStore::{get, set, del, get_and_del, apply, sweep}
+// 两个读侧方法照转发，但**不计进 writes**——这一页测的就是"写了几次"
+pub impl @port.TokenStore for CountingStore with fn get_many(self, keys) {
+  self.inner.get_many(keys)
+}
+
+pub impl @port.TokenStore for CountingStore with fn list_sessions(
+  self,
+  filter,
+  cursor,
+  limit,
+) {
+  self.inner.list_sessions(filter, cursor, limit)
+}
+
+pub extend CountingStore with @port.TokenStore::{
+  get,
+  set,
+  del,
+  get_and_del,
+  apply,
+  sweep,
+  get_many,
+  list_sessions,
+}
 
 async fn throttle_writes() -> (Int, Int) raise {
   let store = CountingStore::new("user")
