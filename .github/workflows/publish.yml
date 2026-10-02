@@ -112,13 +112,24 @@ jobs:
           ! grep -q "Warning" check.txt
 
   publish:
-    name: Publish store + core to mooncakes
+    name: Publish store + core + store-file to mooncakes
     needs: verify
-    # tag 直接发；手动触发要显式勾 publish（push 事件里 inputs 是空的，不会误发）
-    if: github.ref_type == 'tags' || (github.event_name == 'workflow_dispatch' && inputs.publish)
+    # tag 直接发；手动触发要显式勾 publish（push 事件里 inputs 是空的，不会误发）。
+    # 坑留痕：第一版这里写成 github.ref_type == 'tags'，v0.1.7 那次 tag 推送整个 publish job 被
+    # skip（GitHub 的值是单数 'tag'），而 workflow 结论仍是 success——skip 不是失败，看不出来。
+    # 所以下面第一步把判定用的三个值打进 log，判错至少留得下现场。
+    if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.publish)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: What triggered this publish
+        env:
+          PUBLISH_INPUT: ${{ inputs.publish }}
+        run: |
+          echo "event_name=$GITHUB_EVENT_NAME ref=$GITHUB_REF ref_type=$GITHUB_REF_TYPE"
+          core_version=$(sed -nE 's/^version = "([^"]+)".*/\1/p' core/moon.mod | head -1)
+          echo "publish input=$PUBLISH_INPUT core version=$core_version"
 
       - name: Install MoonBit toolchain (latest)
         run: |
