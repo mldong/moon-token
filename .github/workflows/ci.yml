@@ -36,8 +36,8 @@ jobs:
           moon test --target native --no-render | tee native-test.txt
           # 门禁：用例条数必须与测试矩阵一致（wasm-gc 档会静默丢弃 async 用例仍 exit 0，
           # 所以"退出码 0"不构成"跑过了"的证据）
-          grep -q "Total tests: 46" wasm-test.txt
-          grep -q "Total tests: 46" native-test.txt
+          grep -q "Total tests: 55" wasm-test.txt
+          grep -q "Total tests: 55" native-test.txt
 
       # 参赛验收第 4 条"README 可复现"：把 README 的最小用法逐字抽进一个
       # 只依赖注册表已发布件的独立工程，真编译真跑（本机已验一次 PASS）

@@ -143,3 +143,151 @@ async test "R1 README 最小用法跑通 login → check → kick 精确原因 +
   }
   @port.set_clock(None)
 }
+
+///|
+/// G7–G10：`check_route` 的编排语义（登录/权限/角色/超管四件事各钉一条）。
+fn view_auth(
+  perms : Array[String],
+  roles : Array[String],
+) -> @app.TokenAuth[@mem.MemoryStore, FixedView] {
+  let p : FixedView = { permissions: perms, roles, }
+  @app.TokenAuth::new(
+    "route",
+    @app.TokenConfig::default(),
+    @mem.MemoryStore::new("route"),
+    p,
+    @style.opaque_style(),
+  )
+}
+
+fn err_code(v : Result[@guard.GuardOutcome, @port.TokenError]) -> Int {
+  match v {
+    Ok(@guard.Exempt) => -100
+    Ok(@guard.Passed(_)) => -1
+    Err(@port.NotLogin(reason)) => reason.code()
+    Err(@port.NotPermission(_)) => 100
+    Err(@port.NotRole(_)) => 101
+    Err(_) => 900
+  }
+}
+
+async test "G7 豁免给 Exempt（没有主体），有权端点给 Passed，无权端点报 NotPermission" {
+  let auth = view_auth(["sys:user:page"], [])
+  let policy = @guard.RoutePolicy::new().exempt("/sys/login")
+  let t = auth.login("u1", device="pc").token
+  let r0 = @guard.check_route(
+    auth,
+    policy,
+    request("/sys/login", None),
+    false,
+  )
+  assert_true(r0 is Ok(@guard.Exempt))
+  // 没配任何规则 ⇒ 走推导：/sys/user/page ⇒ sys:user:page，视图里有这个码 ⇒ 放行
+  let r1 = @guard.check_route(
+    auth,
+    policy,
+    request("/sys/user/page", Some(t)),
+    false,
+  )
+  match r1 {
+    Ok(@guard.Passed(id)) => assert_eq(id, "u1")
+    _ => assert_eq(err_code(r1), -1)
+  }
+  // 换一个视图里没有的端点 ⇒ 推导出的码查不到 ⇒ NotPermission（不是 NotLogin）
+  let r2 = @guard.check_route(
+    auth,
+    policy,
+    request("/sys/user/save", Some(t)),
+    false,
+  )
+  assert_eq(err_code(r2), 100)
+  // 保护端点不带 token ⇒ 登录先失败，报的是 NotLogin 族而不是权限
+  assert_eq(err_code(@guard.check_route(
+    auth,
+    policy,
+    request("/sys/user/page", None),
+    false,
+  )) >= 0, true)
+}
+
+async test "G8 超管跳过权限但仍要登录；关掉 super_bypass 后老实查权限" {
+  let auth = view_auth([], [])
+  let policy = @guard.RoutePolicy::new()
+  let t = auth.login("u1", device="pc").token
+  assert_eq(err_code(@guard.check_route(
+    auth,
+    policy,
+    request("/sys/user/save", Some(t)),
+    true,
+  )), -1)
+  // 没 token 的"超管"照样过不了登录——超管只免权限，未免登录
+  assert_eq(
+    @guard.check_route(auth, policy, request("/sys/user/save", None), true)
+      is Ok(_),
+    false,
+  )
+  let strict = @guard.RoutePolicy::new()
+  strict.super_bypass = false
+  assert_eq(err_code(@guard.check_route(
+    auth,
+    strict,
+    request("/sys/user/save", Some(t)),
+    true,
+  )), 100)
+}
+
+async test "G9 perms 与 roles 同时存在是 AND：只有权限没角色照样拦" {
+  let auth = view_auth(["sys:user:page"], [])
+  let policy = @guard.RoutePolicy::new().rule(
+    @guard.RouteRule::make("/sys/user/page", ["sys:user:page"])
+      .with_roles(["admin"], @port.And),
+  )
+  let t = auth.login("u1", device="pc").token
+  assert_eq(err_code(@guard.check_route(
+    auth,
+    policy,
+    request("/sys/user/page", Some(t)),
+    false,
+  )), 101)
+  let both = view_auth(["sys:user:page"], ["admin"])
+  let t2 = both.login("u1", device="pc").token
+  assert_eq(
+    err_code(@guard.check_route(both, policy, request("/sys/user/page", Some(t2)), false)),
+    -1,
+  )
+}
+
+async test "G10 Or 模式：多码有任一即放行，And 模式要求全有" {
+  let auth = view_auth(["sys:user:locked"], [])
+  let t = auth.login("u1", device="pc").token
+  let or_policy = @guard.RoutePolicy::new().rule(
+    @guard.RouteRule::make(
+      "/sys/user/locked",
+      ["sys:user:locked", "sys:user:unLocked"],
+    ).with_perm_mode(@port.Or),
+  )
+  assert_eq(
+    err_code(@guard.check_route(
+      auth,
+      or_policy,
+      request("/sys/user/locked", Some(t)),
+      false,
+    )),
+    -1,
+  )
+  let and_policy = @guard.RoutePolicy::new().rule(
+    @guard.RouteRule::make(
+      "/sys/user/locked",
+      ["sys:user:locked", "sys:user:unLocked"],
+    ),
+  )
+  assert_eq(
+    err_code(@guard.check_route(
+      auth,
+      and_policy,
+      request("/sys/user/locked", Some(t)),
+      false,
+    )),
+    100,
+  )
+}
