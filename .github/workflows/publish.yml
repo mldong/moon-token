@@ -1,4 +1,9 @@
-name: CI
+name: publish
+
+# 文件名叫 publish.yml、name 叫 publish，与 jeeflow-moon 的发布入口对齐（那条仓也只有一个
+# publish.yml 承担发版，命名统一优先于「这条流水里检查更占篇幅」的观感）。
+# 参赛验收第 5 条要的 CI 覆盖检查/构建/测试，由其中的 verify job 兑现，
+# job 名保持 Check / Build / Test (wasm + native)，run log 里一眼能看得出来。
 
 # 一条流水做完两件事：verify 跑检查/构建/测试（参赛验收第 5 条：CI 必须覆盖这三件事，
 # native 档只在 CI 跑，本机不试），全绿之后 publish 才把两模块发到 mooncakes。
