@@ -172,7 +172,7 @@ Redis 侧 `T:` 键的 TTL 必须设到 `expire_at + kick_grace`，否则墓碑�
 ### 6.1 Redis
 
 ```text
-{realm}:T:{token}    STRING(JSON 或 v=1 线格式)   PEXPIREAT = expire_at + kick_grace
+{realm}:T:{token}    STRING(线格式 v=1，见 docs/storage-port.md)   PEXPIREAT = expire_at + kick_grace
 {realm}:A:{login_id} HASH  field=token → {d,e,lt}，另置 _ver 字段   TTL = max(e)
 {realm}:R:{refresh}  STRING                        PEXPIREAT = now + refresh_timeout
                                                       读＝GETDEL（或 Lua 原子取删）
@@ -218,7 +218,7 @@ CREATE TABLE token_session (
   last_active   BIGINT       NOT NULL,
   status        TINYINT      NOT NULL,   -- 0 Active / 1 Kicked / 2 Superseded
   refresh_token VARCHAR(64)  NOT NULL,
-  extra         JSON         NOT NULL,
+  extra         TEXT         NOT NULL,   -- 线格式原串，不是 JSON 列型，见本节末
   PRIMARY KEY (realm, token),
   KEY idx_login  (realm, login_id),
   KEY idx_expire (expire_at),
@@ -247,7 +247,7 @@ CREATE TABLE refresh_binding (
 CREATE TABLE account_session (
   realm VARCHAR(32) NOT NULL, login_id VARCHAR(64) NOT NULL,
   version BIGINT NOT NULL DEFAULT 0,      -- 乐观锁，见 §8
-  attrs JSON NOT NULL, expire_at BIGINT NOT NULL,
+  attrs TEXT NOT NULL, expire_at BIGINT NOT NULL,   -- 同上：存线格式原串
   PRIMARY KEY (realm, login_id)
 );
 
@@ -260,6 +260,17 @@ CREATE TABLE account_ban (
 
 `get_and_del` 在 SQL 侧＝事务里 `SELECT ... FOR UPDATE` + `DELETE`（或直接 `DELETE ... RETURNING`，
 Postgres 支持、MySQL 8 不支持要走事务）。**这条是后端能力差异最大的一处**，v2 选型时要单独验。
+
+**为什么 `extra` / `attrs` 用 `TEXT` 而不是 JSON 列型**（四条，一条比一条硬）：
+
+1. 载荷里存的本来就是线格式原串（`v=1|k=v|…`，键与值都转义，见 `docs/storage-port.md`），不是 JSON。
+   用 JSON 列型等于要求"先另转一种序列化再落库"⇒ 解码出现第二条路，而它只该有 `SessionRecord::decode` 这一条。
+2. 各家 JSON 行为不一致：MySQL 的 JSON 列会校验并规范化、且不能带默认值；Postgres 的 `jsonb` 会重排键、
+   `json` 保留原文；SQL Server 长期只能 `NVARCHAR` + `ISJSON` 约束（新近版本才引入自己的 json 型，语义又不同）。
+   同一份 DDL 想在多种库上跑，就别把类型语义交给库去解释。
+3. 更要紧的：JSON 列型会**诱使后人去建 JSON／表达式索引**，那正好违反 §4.4"extra 不可检索"。
+   列型本身就是这道红线的物理护栏——存成文本，想"顺手按 ip 查"就没有免费的路可走。
+4. 尺寸口径：`TEXT` 上限 64KB，装展示字段绰绰有余；真需要大对象是业务表的活，**不靠升列型解决**。
 
 SQL 侧**不需要**Redis 那个 `Z` 结构：`token_session` 本身就是全量 enumerable 的表，
 `idx_login_time` 直接支撑 §7.14 的按登录序翻页；`list_sessions` 在 SQL 后端就是一条带游标的 range 查询，
