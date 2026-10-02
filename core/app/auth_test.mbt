@@ -391,3 +391,201 @@ async test "A20 续期节流：窗内不写后端，出窗才把到期点往前�
     Some(session) => assert_true(session.expire_at() > issued)
   }
 }
+
+///|
+async test "A21 正向：max_sessions 超限按登录时刻剔最老（默认 Logout 档）" {
+  let cfg = @app.TokenConfig::default()
+  cfg.max_sessions = 2
+  let auth = new_auth("user", cfg, [], [])
+  let first = auth.login("u1", device="d1")
+  advance(1_000L)
+  let second = auth.login("u1", device="d2")
+  advance(1_000L)
+  let third = auth.login("u1", device="d3")
+  // 签第三枚时活成员 2+1>2 ⇒ 最早那枚被注销：读作 UnknownToken（当作没登录过）
+  assert_eq(access_code(auth, first.token), @port.UnknownToken.code())
+  assert_eq(access_code(auth, second.token), -1)
+  assert_eq(access_code(auth, third.token), -1)
+  assert_eq((auth.get_token_list_by_login_id("u1")).length(), 2)
+}
+
+///|
+async test "A22 overflow_exit 三档：被剔方读到的原因各不相同" {
+  let a = @app.TokenConfig::default()
+  a.max_sessions = 1
+  a.overflow_exit = @port.Logout
+  let auth_a = new_auth("r1", a, [], [])
+  let old_a = auth_a.login("u1", device="d1")
+  advance(10L)
+  auth_a.login("u1", device="d2") |> ignore
+  assert_eq(access_code(auth_a, old_a.token), @port.UnknownToken.code())
+
+  let b = @app.TokenConfig::default()
+  b.max_sessions = 1
+  b.overflow_exit = @port.Kick
+  let auth_b = new_auth("r2", b, [], [])
+  let old_b = auth_b.login("u1", device="d1")
+  advance(10L)
+  auth_b.login("u1", device="d2") |> ignore
+  assert_eq(access_code(auth_b, old_b.token), @port.KickedOut.code())
+
+  let c = @app.TokenConfig::default()
+  c.max_sessions = 1
+  c.overflow_exit = @port.Supersede
+  let auth_c = new_auth("r3", c, [], [])
+  let old_c = auth_c.login("u1", device="d1")
+  advance(10L)
+  auth_c.login("u1", device="d2") |> ignore
+  assert_eq(access_code(auth_c, old_c.token), @port.SupersededByLogin.code())
+}
+
+///|
+async test "A23 回归：Shared 复用同 token 不新增成员，故不触发上限；跨设备仍受上限" {
+  let cfg = @app.TokenConfig::default()
+  cfg.concurrent = @port.Shared
+  cfg.max_sessions = 2
+  let auth = new_auth("user", cfg, [], [])
+  let one = auth.login("u1", device="d1")
+  let again = auth.login("u1", device="d1")
+  assert_eq(one.token, again.token)
+  assert_true(again.reused)
+  assert_eq((auth.get_token_list_by_login_id("u1")).length(), 1)
+  advance(10L)
+  auth.login("u1", device="d2") |> ignore
+  advance(10L)
+  let third = auth.login("u1", device="d3")
+  // 现在才真的超限（d1 那枚最老）
+  assert_eq(access_code(auth, one.token), @port.UnknownToken.code())
+  assert_eq(access_code(auth, third.token), -1)
+}
+
+///|
+async test "A24 族成员带登录时刻；旧串缺 lt 解出 0 而不是整条拒读" {
+  let fam = @domain.AccountFamily::empty("u1")
+  fam.add_member(@port.Device::of("pc"), "t-1", 9_000L, 1_500L) |> ignore
+  // 线格式字段名是契约：成员条目里必须带键 `lt`。载荷套了两层转义，
+  // 所以逐层解开比断言字面量稳（比 `"lt=1500"` 会因转义假红，比数反斜杠更难读）
+  let outer = match @port.decode_record(fam.payload()) {
+    None => fail("族载荷解不开")
+    Some(map) => map
+  }
+  let rows = @port.decode_list(str_or(outer.get("members"), ""))
+  assert_eq(rows.length(), 1)
+  let row = match @port.decode_record(rows[0]) {
+    None => fail("成员条目解不开")
+    Some(map) => map
+  }
+  assert_eq(@port.record_field_or(row, "lt", ""), "1500")
+  match @domain.AccountFamily::parse("u1", fam.payload()) {
+    None => fail("族记录往返失败")
+    Some(copy) => assert_eq((copy.members())[0].login_time, 1_500L)
+  }
+  // 手工造一条升级前的旧串（成员里没有 lt）：必须还能解，缺的字段走默认值
+  let legacy_member = @port.encode_record([
+    ("d", "pc"),
+    ("t", "t-1"),
+    ("e", "9000"),
+  ])
+  let legacy = @port.encode_record([
+    ("login", "u1"),
+    ("ver", "1"),
+    ("members", @port.encode_list([legacy_member])),
+  ])
+  match @domain.AccountFamily::parse("u1", legacy) {
+    None => fail("旧串应能解出，不能因为多个新字段就把整条族拒掉")
+    Some(old) => assert_eq((old.members())[0].login_time, 0L)
+  }
+}
+
+///|
+async test "A25 在线枚举：登录时刻反序 + 游标翻页不重不漏 + 条件过滤" {
+  let auth = standard()
+  let t1 = auth.login("u1", device="pc")
+  advance(10L)
+  let t2 = auth.login("u2", device="pc")
+  advance(10L)
+  let t3 = auth.login("u1", device="pad")
+  let page = auth.list_online(@port.SessionFilter::all(), "", 2)
+  assert_eq(page.items.length(), 2)
+  assert_eq((page.items)[0].token, t3.token)
+  assert_eq((page.items)[1].token, t2.token)
+  assert_true(!(page.next_cursor).is_empty())
+  let page2 = auth.list_online(@port.SessionFilter::all(), page.next_cursor, 2)
+  assert_eq(page2.items.length(), 1)
+  assert_eq((page2.items)[0].token, t1.token)
+  assert_eq(page2.next_cursor, "")
+  // 精确条件：只看 u1
+  let only = auth.list_online(@port.SessionFilter::make("u1", ""), "", 10)
+  assert_eq(only.items.length(), 2)
+  for item in only.items {
+    assert_eq(item.login_id, "u1")
+  }
+  // 详情批量取：顺序一致且都能读到
+  let rows = auth.load_online(page)
+  assert_eq(rows.length(), 2)
+  for row in rows {
+    match row.session {
+      None => fail("三条刚签的会话不该读不到")
+      Some(record) => assert_true(!(record.login_id).is_empty())
+    }
+  }
+}
+
+///|
+async test "A26 索引落后于事实时：load_online 交回 None，不返回错数据" {
+  let auth = standard()
+  auth.login("u1", device="pc") |> ignore
+  let stale = @port.SessionPage::make(
+    [@port.SessionListing::make("no-such-token", "u1", "pc", 1L, 9_000L)],
+    "",
+  )
+  let rows = auth.load_online(stale)
+  assert_eq(rows.length(), 1)
+  assert_true((rows[0].session) is None)
+}
+
+///|
+async test "A27 回归：账号会话每次写推版本；族空后 TTL 有下限不再永不过期" {
+  let auth = standard()
+  let login = auth.login("u1", device="pc")
+  auth.update_account_session("u1", "theme", Some("dark"))
+  match auth.get_account_session("u1") {
+    None => fail("刚写完就读不到")
+    Some(r) => assert_eq(r.version, 1L)
+  }
+  auth.update_account_session("u1", "theme", Some("light"))
+  match auth.get_account_session("u1") {
+    None => fail("第二次写读不到")
+    Some(r) => assert_eq(r.version, 2L)
+  }
+  // 注销干净 ⇒ 族空 ⇒ 旧公式 max_expire()=0＝永不过期，这条键会永远漏在库里
+  auth.logout(login.token)
+  auth.update_account_session("u1", "lang", Some("zh"))
+  advance(31L * 24L * 3600L * 1000L)
+  assert_true(auth.get_account_session("u1") is None)
+}
+
+///|
+async test "A28 封禁记录带操作人与创建时刻" {
+  let auth = standard()
+  auth.disable(
+    "u1",
+    @port.Duration::from_millis(60_000L),
+    reason="违规",
+    operator="admin-7",
+  )
+  match auth.ban_of("u1") {
+    None => fail("应读到封禁")
+    Some(ban) => {
+      assert_eq(ban.operator, "admin-7")
+      assert_eq(ban.created_at, now_ms())
+      assert_eq(ban.reason, "违规")
+    }
+  }
+  // 不传操作人的老写法仍要能编译并解出空串（向后兼容）
+  auth.disable("u2", @port.Duration::from_millis(60_000L))
+  match auth.ban_of("u2") {
+    None => fail("u2 应被封禁")
+    Some(ban) => assert_eq(ban.operator, "")
+  }
+}

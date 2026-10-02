@@ -263,17 +263,21 @@ pub fn AccountFamily::find_device(
 }
 
 ///|
-/// 加成员；已在族里（同 token）就是空操作，返回"是否真的新增了"
+/// 加成员；已在族里（同 token）就是空操作，返回"是否真的新增了"。
+/// `login_time` 不给默认值：上限淘汰按它定序，静默落成 0 会让这台设备永远排最前。
 pub fn AccountFamily::add_member(
   self : AccountFamily,
   device : @port.Device,
   token : String,
   expire_at : Int64,
+  login_time : Int64,
 ) -> Bool {
   if self.record.has_token(token) {
     false
   } else {
-    self.record.members.push(@port.FamilyMember::make(device, token, expire_at))
+    self.record.members.push(
+      @port.FamilyMember::make(device, token, expire_at, login_time),
+    )
     self.record.version += 1L
     true
   }
@@ -310,6 +314,17 @@ pub fn AccountFamily::prune_expired(self : AccountFamily, now : Int64) -> Int {
 ///|
 pub fn AccountFamily::max_expire(self : AccountFamily) -> Int64 {
   self.record.max_expire()
+}
+
+///|
+/// 活成员里按登录时刻升序取前 k 个 token（上限淘汰用）。
+/// 排序不靠数组顺序——见 `FamilyRecord::oldest_tokens` 那段注释。
+pub fn AccountFamily::oldest_tokens(
+  self : AccountFamily,
+  k : Int,
+  now : Int64,
+) -> Array[String] {
+  self.record.oldest_tokens(k, now)
 }
 
 ///|

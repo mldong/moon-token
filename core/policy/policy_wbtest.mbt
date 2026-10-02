@@ -21,12 +21,13 @@ fn missing_or_empty(item : String?) -> String {
 ///|
 test "D1 decide_concurrent Coexist 每次新签且不动既有 token" {
   let fam = @domain.AccountFamily::empty("u1")
-  fam.add_member(@port.Device::of("pc"), "t-old", 1000L) |> ignore
+  fam.add_member(@port.Device::of("pc"), "t-old", 1000L, 100L) |> ignore
   let plan = decide_concurrent(
     @port.Coexist,
     fam,
     @port.Device::of("mobile"),
     500L,
+    -1,
   )
   match plan.action {
     IssueNew => assert_true(true)
@@ -38,14 +39,14 @@ test "D1 decide_concurrent Coexist 每次新签且不动既有 token" {
 ///|
 test "D2 decide_concurrent Shared 同设备复用同一 token，换设备仍新签" {
   let fam = @domain.AccountFamily::empty("u1")
-  fam.add_member(@port.Device::of("pc"), "t-pc", 9000L) |> ignore
+  fam.add_member(@port.Device::of("pc"), "t-pc", 9000L, 100L) |> ignore
   match
-    decide_concurrent(@port.Shared, fam, @port.Device::of("pc"), 500L).action {
+    decide_concurrent(@port.Shared, fam, @port.Device::of("pc"), 500L, -1).action {
     Reuse(token) => assert_eq(token, "t-pc")
     IssueNew => fail("Shared 下同设备应复用")
   }
   match
-    decide_concurrent(@port.Shared, fam, @port.Device::of("pad"), 500L).action {
+    decide_concurrent(@port.Shared, fam, @port.Device::of("pad"), 500L, -1).action {
     IssueNew => assert_true(true)
     Reuse(t) => fail("不该把 pad 复用到 " + t)
   }
@@ -54,13 +55,14 @@ test "D2 decide_concurrent Shared 同设备复用同一 token，换设备仍新�
 ///|
 test "D3 decide_concurrent Supersede 新签并顶掉全设备既有 token" {
   let fam = @domain.AccountFamily::empty("u1")
-  fam.add_member(@port.Device::of("pc"), "t-1", 9000L) |> ignore
-  fam.add_member(@port.Device::of("mobile"), "t-2", 9000L) |> ignore
+  fam.add_member(@port.Device::of("pc"), "t-1", 9000L, 100L) |> ignore
+  fam.add_member(@port.Device::of("mobile"), "t-2", 9000L, 200L) |> ignore
   let plan = decide_concurrent(
     @port.Supersede,
     fam,
     @port.Device::of("pad"),
     500L,
+    -1,
   )
   match plan.action {
     IssueNew => assert_true(true)
@@ -211,8 +213,8 @@ test "D8 classify_access 的精确原因单点" {
 ///|
 test "D9 AccountFamily 的清扫义务与版本号单调" {
   let fam = @domain.AccountFamily::empty("u1")
-  fam.add_member(@port.Device::of("pc"), "t-alive", 9_000L) |> ignore
-  fam.add_member(@port.Device::of("mobile"), "t-dead", 1_000L) |> ignore
+  fam.add_member(@port.Device::of("pc"), "t-alive", 9_000L, 100L) |> ignore
+  fam.add_member(@port.Device::of("mobile"), "t-dead", 1_000L, 50L) |> ignore
   let version_before = fam.version()
   assert_eq(fam.prune_expired(5_000L), 1)
   assert_eq(fam.all_tokens().length(), 1)
@@ -228,9 +230,9 @@ test "D9 AccountFamily 的清扫义务与版本号单调" {
 ///|
 test "D10 加成员判重＝幂等空操作，线格式往返保形状" {
   let fam = @domain.AccountFamily::empty("u1")
-  assert_true(fam.add_member(@port.Device::of("pc"), "t-1", 9_000L))
+  assert_true(fam.add_member(@port.Device::of("pc"), "t-1", 9_000L, 100L))
   let version_first = fam.version()
-  assert_true(!fam.add_member(@port.Device::of("pc"), "t-1", 9_000L))
+  assert_true(!fam.add_member(@port.Device::of("pc"), "t-1", 9_000L, 100L))
   assert_eq(fam.version(), version_first)
   assert_eq(fam.all_tokens().length(), 1)
   match @domain.AccountFamily::parse("u1", fam.payload()) {
@@ -245,4 +247,62 @@ test "D10 加成员判重＝幂等空操作，线格式往返保形状" {
   assert_true(
     @domain.AccountFamily::parse("someone-else", fam.payload()) is None,
   )
+}
+
+///|
+test "D11 max_sessions 超限：按登录时刻剔最老，且不吃数组顺序" {
+  // 故意把登录时刻写成乱序（100 / 300 / 200），验证排序真按 lt 而不是按下标
+  let fam = @domain.AccountFamily::empty("u1")
+  fam.add_member(@port.Device::of("d1"), "t-1", 9_000L, 100L) |> ignore
+  fam.add_member(@port.Device::of("d2"), "t-2", 9_000L, 300L) |> ignore
+  fam.add_member(@port.Device::of("d3"), "t-3", 9_000L, 200L) |> ignore
+  let plan = decide_concurrent(
+    @port.Coexist,
+    fam,
+    @port.Device::of("d4"),
+    500L,
+    2,
+  )
+  // 活成员 3 + 新签 1 > 2 ⇒ 剔 2 个最老的：100  then 200
+  assert_eq(plan.evict_tokens.length(), 2)
+  assert_eq(plan.evict_tokens[0], "t-1")
+  assert_eq(plan.evict_tokens[1], "t-3")
+}
+
+///|
+test "D12 max_sessions 边界：未超限不剔人，-1 与 0 都算不限" {
+  let fam = @domain.AccountFamily::empty("u1")
+  fam.add_member(@port.Device::of("d1"), "t-1", 9_000L, 100L) |> ignore
+  fam.add_member(@port.Device::of("d2"), "t-2", 9_000L, 200L) |> ignore
+  fam.add_member(@port.Device::of("d3"), "t-3", 9_000L, 300L) |> ignore
+  let dev = @port.Device::of("d4")
+  // 3 + 1 <= 4 ⇒ 正好在上限内
+  assert_eq(decide_concurrent(@port.Coexist, fam, dev, 500L, 4).evict_tokens.length(), 0)
+  // 刚好卡线：3 + 1 > 3 ⇒ 剔最老那一个
+  let edge = decide_concurrent(@port.Coexist, fam, dev, 500L, 3)
+  assert_eq(edge.evict_tokens.length(), 1)
+  assert_eq(edge.evict_tokens[0], "t-1")
+  assert_eq(decide_concurrent(@port.Coexist, fam, dev, 500L, -1).evict_tokens.length(), 0)
+  assert_eq(decide_concurrent(@port.Coexist, fam, dev, 500L, 0).evict_tokens.length(), 0)
+}
+
+///|
+test "D13 Supersede 不叠加淘汰；同刻登录按 token 字典序定序（跨后端确定性）" {
+  let fam = @domain.AccountFamily::empty("u1")
+  fam.add_member(@port.Device::of("d1"), "b-2", 9_000L, 500L) |> ignore
+  fam.add_member(@port.Device::of("d2"), "b-1", 9_000L, 500L) |> ignore
+  // Supersede 本来就把全部旧会话置墓碑，上限那一路必须为空，否则同一批 token 被处理两次
+  let sup = decide_concurrent(
+    @port.Supersede,
+    fam,
+    @port.Device::of("d3"),
+    500L,
+    1,
+  )
+  assert_eq(sup.evict_tokens.length(), 0)
+  assert_eq(sup.supersede_tokens.length(), 2)
+  // 同毫秒登录 ⇒ 靠 token 兜底，两个后端排出来必须同一个序
+  let co = decide_concurrent(@port.Coexist, fam, @port.Device::of("d3"), 500L, 1)
+  assert_eq(co.evict_tokens[0], "b-1")
+  assert_eq(co.evict_tokens[1], "b-2")
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 本地门禁：与 CI 同判据。断言三件事——零警告、用例条数=33、0 failed。
+# 本地门禁：与 CI 同判据。断言三件事——零警告、用例条数=44、0 failed。
 set -euo pipefail
 export MOON_HOME="${MOON_HOME:-$HOME/.moon}"
 cd "$(dirname "$0")/.."
@@ -13,7 +13,7 @@ fi
 
 test_log=$(moon test --target wasm --no-render 2>&1)
 printf '%s\n' "$test_log" | tail -3
-printf '%s' "$test_log" | grep -q "Total tests: 33" || { echo "GATE FAIL: 用例条数不是 33（矩阵增删要同步这里）" >&2; exit 1; }
+printf '%s' "$test_log" | grep -q "Total tests: 44" || { echo "GATE FAIL: 用例条数不是 44（矩阵增删要同步这里）" >&2; exit 1; }
 printf '%s' "$test_log" | grep -q "failed: 0" || { echo "GATE FAIL: 有失败用例" >&2; exit 1; }
 bash scripts/docs-check.sh
-echo "GATE PASS: 零警告 + Total tests: 33 + 0 failed + 文档代码块真跑"
+echo "GATE PASS: 零警告 + Total tests: 44 + 0 failed + 文档代码块真跑"

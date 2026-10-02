@@ -5,7 +5,7 @@
 
 本页代码块由 `scripts/docs-check.sh` 逐块真编译真跑（对注册表已发布件）。
 
-## 1. 六个方法
+## 1. 八个方法
 
 契约形状长这样（`store/port/store.mbt`，此处只列签名，说明"谁在什么时候调"）：
 
@@ -17,8 +17,16 @@ pub(open) trait TokenStore {
   async fn get_and_del(Self, String) -> String? raise TokenError
   async fn apply(Self, FamilyPatch) -> Unit raise TokenError
   async fn sweep(Self, Int64) -> Int raise TokenError
+  async fn get_many(Self, Array[String]) -> Array[(String, String?)] raise TokenError
+  async fn list_sessions(Self, SessionFilter, String, Int) -> SessionPage raise TokenError
 }
 ```
+
+后两个是本轮为"在线用户列表"补的读侧方法（决策见 `docs/data-model.md` §7.14）：
+`get_many` 把"取一页详情"压成一次批量往返，`list_sessions` 只**枚举我们建模的精确条件**
+（`login_id` / `device`）、按登录时刻反序、游标翻页、`limit` 有服务端上限。
+**故意没有** `scan(prefix)` 之类的裸扫描，也没有模糊匹配：鉴权库里开一条全库扫的路，
+等于送业务方一个 DoS 入口，也送后人一个"顺手给 extra 建索引"的借口。
 
 后端失败一律投到共享内核的 `@port.Store(msg)` 这一档（`TokenError` 的变体之一），
 **不要另立错误类型**——否则错误词汇表会在端口边界断掉，`err.message()` 就接不上了。
@@ -168,11 +176,15 @@ async test "同一个补丁投两次，版本号不动" {
 
 ```text
 {realm}:T:{token}        会话记录        线格式 v=1：k=v|k=v，键值都转义
-{realm}:A:{login_id}     反查族          成员各自是编码后的记录，';' 连接
+{realm}:A:{login_id}     反查族          成员各自是编码后的记录，';' 连接；成员带 lt（登录时刻）
 {realm}:R:{refresh}      refresh 绑定    login_id + device + 绑定的 access
-{realm}:S:{login_id}     账号会话        属性表
-{realm}:D:{login_id}     封禁            until + reason
+{realm}:S:{login_id}     账号会话        属性表 + version（乐观锁）
+{realm}:D:{login_id}     封禁            until + reason + op + at
+{realm}:Z                活会话索引      member=token, score=lt；无载荷，Redis 版才需要建
 ```
+
+`X:`（token→realm 反查）与 `E:`（事件/审计流水）是**预留字母**，现在不实现也不许占用——
+键位一旦进过发布版本就不可回收。
 
 线格式由共享内核持有（`store/port/codec.mbt`），适配器与领域层共用同一份编解码，
 所以不会出现"两实现各自发明字段名"。加字段是安全的（解码按键取，不认识的可忽略）；
@@ -195,11 +207,24 @@ test "线格式能扛住分隔符与中文" {
 }
 ```
 
-## 6. 换后端的最小清单
+## 6. 换后端的最小清单（验收项，缺一条就不算实现完）
 
-1. 实现六个 async 方法，抛错一律 `raise @port.Store(msg)`。
+1. 实现八个 async 方法，抛错一律 `raise @port.Store(msg)`。
 2. `get` 的惰性过期按 §4 两档实现。
 3. `get_and_del` 必须原子（Redis：`GETDEL` 或 Lua；SQL：事务里 `SELECT ... FOR UPDATE` + `DELETE`）。
 4. `apply` 里每个变体都要幂等（重复投递不重复加成员、不重复推版本号）。
+   变体 `ForgetTokens` 与 `RemoveTokens` 的差别**只有留不留 `T:` 键**——上限的 Kick/Supersede 档靠它。
 5. `sweep` 返回**真实**清掉的条数——用它断言"跑一万次登录登出，键数不单调增长"。
 6. 键前缀照 §5，realm 拼在最前面，别自己发明分隔符。
+7. **`T:` 键的 TTL 必须设到 `expire_at + kick_grace`**（`docs/data-model.md` §4.2）。少设了，
+   `KickedOut` / `SupersededByLogin` 会静默退化成 `UnknownToken`，而且**不会有任何测试变红**——
+   内存版与后端测的是同一套语义断言，只有真实时间下才暴露。
+8. **族的写不许退化成整块覆盖**。两台设备并发登录时"读全族→改→整块 set"会互相丢成员；
+   必须带 `version` 做 CAS（`FamilyRecord.version` / `AccountSessionRecord.version`），失败重读重试。
+9. **序列化只有一条路**：载荷一律走共享内核的线格式（`v=1|k=v|…`，键与值都转义），
+   不在后端里另起 JSON。解码只按键取，缺字段走默认值（旧数据因此天然可读）。
+10. `list_sessions` 的**排序与游标必须与登录时刻一致**（新在前，同刻按 token 兜底）。
+    内存版可以直接遍历自有表，Redis 版走 §6.1 那条 `Z`（`score=lt`），SQL 版走 `(realm, login_time)` 索引——
+    三个后端对同一批数据必须给出同一个页序，否则游标会漂、翻页会重漏。
+11. `get_many` 返回顺序与入参一致、缺失项 `None`；**不要**在这里判活以外的裁决
+    （索引是派生缓存，权威在 `T:`）。

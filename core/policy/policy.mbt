@@ -14,14 +14,17 @@ pub(all) struct LoginPlan {
   action : LoginAction
   /// 需要置为 Superseded 墓碑的旧 token（Coexist/Shared 下为空）
   supersede_tokens : Array[String]
+  /// 因 `max_sessions` 溢出要下线的 token（按登录时刻升序，最老的在前）
+  evict_tokens : Array[String]
 }
 
 ///|
 pub fn LoginPlan::make(
   action : LoginAction,
   supersede_tokens : Array[String],
+  evict_tokens : Array[String],
 ) -> LoginPlan {
-  let p : LoginPlan = { action, supersede_tokens, }
+  let p : LoginPlan = { action, supersede_tokens, evict_tokens, }
   p
 }
 
@@ -30,28 +33,56 @@ pub fn LoginPlan::make(
 /// · Coexist —— 每次新签，旧 token 继续有效
 /// · Shared  —— 同 realm 同 device 复用同一 token；该设备无有效 token 才新签
 /// · Supersede —— 新签，并把同账号下**全部**既有 token 置 Superseded
+///
+/// `max_sessions`（`<=0` 或 `-1` 视为不限）：只在这次真的新增一枚时生效，按登录时刻
+/// **先进先出**剔最老的，剔完正好回到上限内。`Supersede` 不参与——它本来就把全部旧会话清空，
+/// 活成员恒为 1；`Shared` 要参与，因为它是"每设备一枚"，设备数一样能把族撑爆。
 pub fn decide_concurrent(
   policy : @port.ConcurrentPolicy,
   family : @domain.AccountFamily,
   device : @port.Device,
   now : Int64,
+  max_sessions : Int,
 ) -> LoginPlan {
   let live_family = family
   live_family.prune_expired(now) |> ignore
-  match policy {
-    @port.Coexist => LoginPlan::make(IssueNew, [])
+  let base = match policy {
+    @port.Coexist => LoginPlan::make(IssueNew, [], [])
     @port.Shared => {
       let token = match live_family.find_device(device) {
         None => ""
         Some(existing) => existing.token
       }
       if token.is_empty() {
-        LoginPlan::make(IssueNew, [])
+        LoginPlan::make(IssueNew, [], [])
       } else {
-        LoginPlan::make(Reuse(token), [])
+        LoginPlan::make(Reuse(token), [], [])
       }
     }
-    @port.Supersede => LoginPlan::make(IssueNew, live_family.all_tokens())
+    @port.Supersede => LoginPlan::make(IssueNew, live_family.all_tokens(), [])
+  }
+  let cap_applies = match policy {
+    @port.Supersede => false
+    _ => true
+  }
+  let is_new_token = match base.action {
+    IssueNew => true
+    Reuse(_) => false
+  }
+  if !is_new_token || max_sessions <= 0 || !cap_applies {
+    base
+  } else {
+    let live = live_family.members().length()
+    let over = live + 1 - max_sessions
+    if over <= 0 {
+      base
+    } else {
+      LoginPlan::make(
+        base.action,
+        base.supersede_tokens,
+        live_family.oldest_tokens(over, now),
+      )
+    }
   }
 }
 

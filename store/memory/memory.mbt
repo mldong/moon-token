@@ -165,11 +165,13 @@ pub fn MemoryStore::apply_patch(
   patch : @port.FamilyPatch,
 ) -> Unit {
   match patch {
-    @port.AddToken(login_id, device, token, expire_at) => {
+    @port.AddToken(login_id, device, token, expire_at, login_time) => {
       let fam = self.load_family(login_id)
       if !fam.has_token(token) {
         // 幂等：已在族里就不动版本号
-        fam.members.push(@port.FamilyMember::make(device, token, expire_at))
+        fam.members.push(
+          @port.FamilyMember::make(device, token, expire_at, login_time),
+        )
         fam.version += 1L
         self.save_family(login_id, fam)
       }
@@ -188,6 +190,18 @@ pub fn MemoryStore::apply_patch(
       if fam.members.length() != before {
         fam.version += 1L
       }
+      self.save_family(login_id, fam)
+    }
+    @port.ForgetTokens(login_id, tokens) => {
+      let fam = self.load_family(login_id)
+      let before = fam.members.length()
+      fam.members = fam.members.filter((m : @port.FamilyMember) => {
+        !tokens.contains(m.token)
+      })
+      if fam.members.length() != before {
+        fam.version += 1L
+      }
+      // 与 RemoveTokens 的唯一差别：不动 `T:` 键，墓碑要留着让对端读到精确原因
       self.save_family(login_id, fam)
     }
     @port.TouchExpire(tokens, expire_at) =>
@@ -219,13 +233,47 @@ pub fn MemoryStore::sweep_at(self : MemoryStore, now : Int64) -> Int {
     match decoded {
       None => ()
       Some(fam) => {
-        let (kept, dropped) = fam.without_expired(now)
-        if dropped > 0 {
+        let (alive_members, dropped) = fam.without_expired(now)
+        // 族↔会话一致性收敛（契约 §4.1：成员是派生缓存，权威在 `T:`）：
+        // 会话已经不在了 ⇒ 摘成员；会话还在但到期时刻不一致 ⇒ 以会话为准修，
+        // 不修的话"续期只写 T、不写族"这条就会让族里的 e 永远停在签发时刻
+        let kept : Array[@port.FamilyMember] = []
+        let mut fixed = 0
+        for m in alive_members {
+          match self.entries.get(self.keys.token(m.token)) {
+            None => pruned += 1
+            Some(session_entry) =>
+              match @port.SessionRecord::decode(session_entry.payload) {
+                None => pruned += 1
+                Some(session) => {
+                  if session.expire_at != m.expire_at {
+                    kept.push(
+                      @port.FamilyMember::make(
+                        m.device,
+                        m.token,
+                        session.expire_at,
+                        m.login_time,
+                      ),
+                    )
+                    fixed += 1
+                  } else {
+                    kept.push(m)
+                  }
+                }
+              }
+          }
+        }
+        let members_changed = kept.length() != fam.members.length()
+        if dropped > 0 || members_changed || fixed > 0 {
           pruned += dropped
           if kept.is_empty() {
             self.entries.remove(key)
           } else {
             fam.members = kept
+            // 版本号只随成员增删走（不变量 3）：单纯修正 e 不推版本
+            if members_changed {
+              fam.version += 1L
+            }
             entry.payload = fam.encode()
             entry.expire_at = fam.max_expire()
           }
@@ -234,6 +282,135 @@ pub fn MemoryStore::sweep_at(self : MemoryStore, now : Int64) -> Int {
     }
   }
   dead.length() + pruned
+}
+
+///|
+/// 枚举排序：登录时刻**新**的在前，同刻按 token 字典序倒排。
+/// 这条顺序就是 Redis 侧 `ZREVRANGEBYSCORE` 的返回顺序——两个后端必须一致，否则游标会漂。
+fn listing_newer(a : @port.SessionListing, b : @port.SessionListing) -> Bool {
+  a.login_time > b.login_time ||
+  (a.login_time == b.login_time && a.token > b.token)
+}
+
+///|
+/// 会话索引前缀，`list_sessions` 靠它从自有表里挑出 `T:` 条目
+fn MemoryStore::token_prefix(self : MemoryStore) -> String {
+  "\{self.keys.realm}:T:"
+}
+
+///|
+/// 去掉键的固定头部拿到 token。逐字符数过去，不用 slice——realm/token 都可能含非 ASCII，
+/// 字节数与字符数不一致时 slice 会切错位。
+fn strip_head(s : String, head : String) -> String {
+  let mut skip = 0
+  for _ in head.iter() {
+    skip += 1
+  }
+  let buf = StringBuilder()
+  let mut i = 0
+  for c in s.iter() {
+    if i >= skip {
+      buf.write_char(c)
+    }
+    i += 1
+  }
+  buf.to_string()
+}
+
+///|
+/// 枚举活会话索引：按登录时刻反序翻页。条件只认精确的 login_id / device；
+/// **判活不在这里做**——这一步返回的是索引级条目，取不到载荷的由 `get_many` 那一轮丢弃。
+pub fn MemoryStore::scan_sessions(
+  self : MemoryStore,
+  filter : @port.SessionFilter,
+  cursor : String,
+  limit : Int,
+) -> @port.SessionPage {
+  let prefix = self.token_prefix()
+  let size = @port.clamp_page_size(limit)
+  let all : Array[@port.SessionListing] = []
+  for (key, entry) in self.entries {
+    if key.has_prefix(prefix) {
+      match @port.SessionRecord::decode(entry.payload) {
+        None => ()
+        Some(record) => {
+          let hit_login = filter.login_id.is_empty() ||
+            record.login_id == filter.login_id
+          let hit_device = filter.device.is_empty() ||
+            record.device.id == filter.device
+          if hit_login && hit_device {
+            all.push(
+              @port.SessionListing::make(
+                strip_head(key, prefix),
+                record.login_id,
+                record.device.id,
+                record.login_time,
+                record.expire_at,
+              ),
+            )
+          }
+        }
+      }
+    }
+  }
+  // 插入排序：条目量级是"一个 realm 的在线数"，v1 内存版不为此写快排
+  let mut sorted : Array[@port.SessionListing] = []
+  for item in all {
+    let mut pos = 0
+    while pos < sorted.length() && listing_newer(sorted[pos], item) {
+      pos += 1
+    }
+    let merged : Array[@port.SessionListing] = []
+    let n = sorted.length()
+    let mut i = 0
+    while i < n {
+      if i == pos {
+        merged.push(item)
+      }
+      merged.push(sorted[i])
+      i += 1
+    }
+    if pos >= n {
+      merged.push(item)
+    }
+    sorted = merged
+  }
+  // 游标＝上一页最后一条的 (login_time, token)；只保留严格排在它之后的
+  let after = match @port.parse_cursor(cursor) {
+    None => (0L, "")
+    Some(pair) => pair
+  }
+  let has_cursor = !cursor.is_empty()
+  let items : Array[@port.SessionListing] = []
+  for item in sorted {
+    let keep = !has_cursor || sits_after(item, after)
+    if keep && items.length() < size {
+      items.push(item)
+    }
+  }
+  let next_cursor = if items.length() < size {
+    ""
+  } else {
+    @port.make_cursor(items[items.length() - 1])
+  }
+  @port.SessionPage::make(items, next_cursor)
+}
+
+///|
+/// 游标之后的判定：只有登录时刻严格排在游标之后的才进下一页
+/// （游标本身和它前面的都跳过——游标那条即使已被删也不影响，比较的是位置不是存在性）
+fn sits_after(item : @port.SessionListing, cursor : (Int64, String)) -> Bool {
+  item.login_time < cursor.0 ||
+  (item.login_time == cursor.0 && item.token < cursor.1)
+}
+
+///|
+/// 批量读：顺序与入参一致，缺失项为 `None`（含"已过期"，走的是与 `get` 同一套惰性判活）
+pub fn MemoryStore::take_many(
+  self : MemoryStore,
+  keys : Array[String],
+) -> Array[(String, String?)] {
+  keys.map((key : String) => (key, self.lookup(key)))
 }
 
 ///|
@@ -272,6 +449,21 @@ pub impl @port.TokenStore for MemoryStore with fn sweep(self, now) {
 }
 
 ///|
+pub impl @port.TokenStore for MemoryStore with fn get_many(self, keys) {
+  self.take_many(keys)
+}
+
+///|
+pub impl @port.TokenStore for MemoryStore with fn list_sessions(
+  self,
+  filter,
+  cursor,
+  limit,
+) {
+  self.scan_sessions(filter, cursor, limit)
+}
+
+///|
 pub extend MemoryStore with @port.TokenStore::{
   get,
   set,
@@ -279,4 +471,6 @@ pub extend MemoryStore with @port.TokenStore::{
   get_and_del,
   apply,
   sweep,
+  get_many,
+  list_sessions,
 }

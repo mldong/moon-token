@@ -56,7 +56,7 @@ fn new_auth() -> @app.TokenAuth[@mem.MemoryStore, DemoPerms] {
   let p : DemoPerms = { permissions: ["user:info"], roles: ["user"] }
   @app.TokenAuth::new(
     "user",                          // realm：账号体系
-    @app.TokenConfig::default(),     // 八项配置，默认值即推荐值
+    @app.TokenConfig::default(),     // 十二项配置，默认值即推荐值
     @mem.MemoryStore::new("user"),   // 存储端口；换后端只改这一处
     p,
     @style.opaque_style(),           // token 生成；取不到平台熵即 abort

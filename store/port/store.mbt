@@ -49,6 +49,120 @@ pub(open) trait TokenStore {
   async fn apply(Self, FamilyPatch) -> Unit raise TokenError
   /// 过期清扫，返回清掉的条目数
   async fn sweep(Self, Int64) -> Int raise TokenError
+  /// 批量读：一次拿多个键的载荷，返回顺序与入参一致、缺失项为 `None`。
+  /// 存在理由：在线列表是"枚举一页 + 取这页详情"，没有它就退化成 N 次往返。
+  async fn get_many(Self, Array[String]) -> Array[(String, String?)] raise TokenError
+  /// 枚举会话：按**登录时刻反序**（最新在前）翻页，游标见 `make_cursor`。
+  /// 返回的是索引级条目（无载荷）；判活不在这一步做——索引不裁决，权威在 `T:`。
+  async fn list_sessions(
+    Self,
+    SessionFilter,
+    String,
+    Int,
+  ) -> SessionPage raise TokenError
+}
+
+///|
+/// 会话枚举的过滤条件：**只开放我们建模的精确字段**，空串＝该维度不限。
+/// 不给模糊匹配、不暴露裸扫描——鉴权库里开一条全库扫的路，等于送业务方一个 DoS 入口。
+pub(all) struct SessionFilter {
+  login_id : String
+  device : String
+}
+
+///|
+pub fn SessionFilter::all() -> SessionFilter {
+  let f : SessionFilter = { login_id: "", device: "", }
+  f
+}
+
+///|
+pub fn SessionFilter::make(login_id : String, device : String) -> SessionFilter {
+  let f : SessionFilter = { login_id, device, }
+  f
+}
+
+///|
+/// 索引级条目（不含载荷）：详情交给 `get_many`，这样一页的大小不会被子文档撑爆
+pub(all) struct SessionListing {
+  token : String
+  login_id : String
+  device : String
+  login_time : Int64
+  expire_at : Int64
+}
+
+///|
+pub fn SessionListing::make(
+  token : String,
+  login_id : String,
+  device : String,
+  login_time : Int64,
+  expire_at : Int64,
+) -> SessionListing {
+  let i : SessionListing = {
+    token,
+    login_id,
+    device,
+    login_time,
+    expire_at,
+  }
+  i
+}
+
+///|
+pub(all) struct SessionPage {
+  items : Array[SessionListing]
+  /// 下一页游标；空串＝到底了
+  next_cursor : String
+}
+
+///|
+pub fn SessionPage::make(
+  items : Array[SessionListing],
+  next_cursor : String,
+) -> SessionPage {
+  let p : SessionPage = { items, next_cursor, }
+  p
+}
+
+///|
+/// 单页硬上限：调用方给多大的 limit 都不许超过它，"取全部"在这里被挡在端口层
+pub let max_page_size : Int = 100
+
+///|
+/// `limit <= 0` 时的默认页大小
+pub let default_page_size : Int = 20
+
+///|
+pub fn clamp_page_size(limit : Int) -> Int {
+  if limit <= 0 {
+    default_page_size
+  } else if limit > max_page_size {
+    max_page_size
+  } else {
+    limit
+  }
+}
+
+///|
+/// 游标＝`(登录时刻, token)` 的线格式编码。走 `escape` 是因为 token 是外部可传入的不透明串，
+/// 里面出现分隔符不能把游标撑成三段。
+pub fn make_cursor(item : SessionListing) -> String {
+  "\{escape(item.login_time.to_string())}|\{escape(item.token)}"
+}
+
+///|
+pub fn parse_cursor(text : String) -> (Int64, String)? {
+  let parts = split_by(text, '|')
+  if parts.length() != 2 {
+    None
+  } else {
+    match parse_int64(unescape(parts[0])) {
+      None => None
+      Some(login_time) => Some((login_time, unescape(parts[1])))
+    }
+  }
 }
 
 ///|

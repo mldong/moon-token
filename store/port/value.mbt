@@ -156,3 +156,33 @@ pub(all) enum MatchMode {
   And
   Or
 }
+
+///|
+/// 超出 `max_sessions` 上限时，被剔的那一枚以何种方式下线（三档，语义各不相同）：
+/// · Logout   —— 直接删键，对方读作 `UnknownToken`（当作没登录过）
+/// · Kick     —— 落 Kicked 墓碑，对方拿精确原因 `KickedOut`（知道被人踢了）
+/// · Supersede—— 落 Superseded 墓碑，对方拿 `SupersededByLogin`（知道被新登录顶了）
+pub(all) enum OverflowExit {
+  Logout
+  Kick
+  Supersede
+}
+
+///|
+pub fn OverflowExit::code(self : OverflowExit) -> String {
+  match self {
+    Logout => "logout"
+    Kick => "kick"
+    Supersede => "supersede"
+  }
+}
+
+///|
+pub fn OverflowExit::of_code(code : String) -> OverflowExit? {
+  match code {
+    "logout" => Some(Logout)
+    "kick" => Some(Kick)
+    "supersede" => Some(Supersede)
+    _ => None
+  }
+}

@@ -61,7 +61,7 @@ fn make_auth() -> @app.TokenAuth[@mem.MemoryStore, DemoPerms] {
   let perms : DemoPerms = { permissions: ["user:info", "user:list"], roles: ["demo"] }
   @app.TokenAuth::new(
     "user",                          // realm
-    @app.TokenConfig::default(),     // 八项配置，默认值即推荐值，见 configuration.md
+    @app.TokenConfig::default(),     // 十二项配置，默认值即推荐值，见 configuration.md
     @mem.MemoryStore::new("user"),   // 存储端口；换后端只改这一处
     perms,
     @style.opaque_style(),           // token 生成风格；取不到平台熵即 abort，见 clock-and-entropy.md

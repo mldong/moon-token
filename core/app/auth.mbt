@@ -122,7 +122,7 @@ async fn[S : @port.TokenStore, P] TokenAuth::issue(
     @port.RefreshRecord::make(login_id, device.id, token).encode(),
     @policy.expire_at_of(now, self.config.refresh_timeout_ms()),
   )
-  self.store.apply(@port.AddToken(login_id, device, token, expire_at))
+  self.store.apply(@port.AddToken(login_id, device, token, expire_at, now))
   LoginResult::make(token, login_id, device.id, expire_at, refresh_token, false)
 }
 
@@ -145,7 +145,13 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::login(
   let use_remember = remember
   let dev = @port.Device::normalize(Some(device))
   let fam = self.load_family(login_id)
-  let plan = @policy.decide_concurrent(self.config.concurrent, fam, dev, now)
+  let plan = @policy.decide_concurrent(
+    self.config.concurrent,
+    fam,
+    dev,
+    now,
+    self.config.max_sessions,
+  )
   match plan.action {
     @policy.IssueNew => {
       // Supersede 策略：先把既有 token 落成"被顶"墓碑，再签新的
@@ -176,6 +182,9 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::login(
           now,
         ),
       )
+      if !plan.evict_tokens.is_empty() {
+        self.evict_overflow(login_id, plan.evict_tokens, now)
+      }
       result
     }
     @policy.Reuse(existing) =>
@@ -315,6 +324,63 @@ async fn[S : @port.TokenStore, P] TokenAuth::mark_tokens(
 }
 
 ///|
+/// 被上限剔掉的那一枚怎么下线（`overflow_exit` 三档）。
+/// **先读回它绑定的 refresh 再动 `T:`**——注销漏斗是不变量 7：`T` 删 + 族摘 + `R` 联动删。
+/// Kick/Supersede 两档走 `ForgetTokens`（只摘成员、留墓碑），否则保留窗内的墓碑
+/// 会被下一次登录重新数进上限里。
+async fn[S : @port.TokenStore, P] TokenAuth::evict_overflow(
+  self : TokenAuth[S, P],
+  login_id : String,
+  tokens : Array[String],
+  now : Int64,
+) -> Unit raise @port.TokenError {
+  let refresh_keys : Array[String] = []
+  for old in tokens {
+    match self.read_session(old) {
+      None => ()
+      Some(session) => {
+        let bound = session.refresh_token()
+        if !bound.is_empty() {
+          refresh_keys.push(self.keys.refresh(bound))
+        }
+      }
+    }
+  }
+  let deadline = @policy.kick_deadline(now, self.config.kick_grace_ms())
+  match self.config.overflow_exit {
+    @port.Logout => {
+      self.store.apply(@port.RemoveTokens(login_id, tokens))
+      for old in tokens {
+        self.events.fire(
+          @event.TokenEvent::make(@event.LoggedOut, login_id, "", old, now),
+        )
+      }
+    }
+    @port.Kick => {
+      self.store.apply(@port.MarkStatus(tokens, @port.Kicked, deadline))
+      self.store.apply(@port.ForgetTokens(login_id, tokens))
+      for old in tokens {
+        self.events.fire(
+          @event.TokenEvent::make(@event.Kicked, login_id, "", old, now),
+        )
+      }
+    }
+    @port.Supersede => {
+      self.store.apply(@port.MarkStatus(tokens, @port.Superseded, deadline))
+      self.store.apply(@port.ForgetTokens(login_id, tokens))
+      for old in tokens {
+        self.events.fire(
+          @event.TokenEvent::make(@event.Superseded, login_id, "", old, now),
+        )
+      }
+    }
+  }
+  if !refresh_keys.is_empty() {
+    self.store.apply(@port.RemoveKeys(refresh_keys))
+  }
+}
+
+///|
 /// 注销漏斗（单一出口）：T 键删 + 反查族摘除 + 绑定的 refresh 一并失效，不留孤儿键
 pub async fn[S : @port.TokenStore, P] TokenAuth::logout(
   self : TokenAuth[S, P],
@@ -396,14 +462,16 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::disable(
   login_id : String,
   duration : @port.Duration,
   reason? : String = "",
+  operator? : String = "",
 ) -> Unit raise @port.TokenError {
   let now = @port.now_ms()
   let until = @policy.expire_at_of(now, duration.to_millis())
   let text = reason
+  let who = operator
   self.store.apply(
     @port.PutRecord(
       self.keys.ban(login_id),
-      @port.BanRecord::make(until, text).encode(),
+      @port.BanRecord::make(until, text, who, now).encode(),
       until,
     ),
   )
@@ -466,6 +534,44 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::get_device_list(
     if !out.contains(info.device) {
       out.push(info.device)
     }
+  }
+  out
+}
+
+///|
+/// 跨账号枚举在线会话（mldong 在线用户列表那一页的入口）。
+/// 两步走是刻意的：这一步只拿**索引级条目**（登录时刻反序 + 游标翻页），详情由 `load_online`
+/// 一次批量取——一页合计两次往返，而不是"枚举 + 逐会话 + 逐 token"那种 1+N+ΣM 的形状。
+/// **判活不在枚举这一步做**：索引是派生缓存，权威在 `T:`，取不到载荷的自然被丢掉。
+pub async fn[S : @port.TokenStore, P] TokenAuth::list_online(
+  self : TokenAuth[S, P],
+  filter : @port.SessionFilter,
+  cursor : String,
+  limit : Int,
+) -> @port.SessionPage raise @port.TokenError {
+  self.store.list_sessions(filter, cursor, limit)
+}
+
+///|
+/// 取一页的详情：顺序与 `page.items` 一致；`None`＝这条已经不在线（索引落后于事实时的正常现象，
+/// 宁可少几条也不返回错数据）
+pub async fn[S : @port.TokenStore, P] TokenAuth::load_online(
+  self : TokenAuth[S, P],
+  page : @port.SessionPage,
+) -> Array[OnlineRow] raise @port.TokenError {
+  let keys = page.items.map((item : @port.SessionListing) =>
+    self.keys.token(item.token))
+  let rows = self.store.get_many(keys)
+  let out : Array[OnlineRow] = []
+  let mut i = 0
+  while i < page.items.length() {
+    let row = rows[i]
+    let record = match row.1 {
+      None => None
+      Some(payload) => @port.SessionRecord::decode(payload)
+    }
+    out.push(OnlineRow::make(page.items[i], record))
+    i += 1
   }
   out
 }
@@ -569,12 +675,25 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::update_account_session(
     None => record.attrs.remove(key) |> ignore
     Some(v) => record.attrs[key] = v
   }
+  record.version += 1L
   let fam = self.load_family(login_id)
+  // TTL 不能只跟族：账号注销干净后 `max_expire()` 退化成 0＝永不过期，这条键就漏在库里了。
+  // 取"族最晚到期"与"本次写入刷新出的 refresh_timeout 下限"里更晚的那个，两头都堵住。
+  let by_family = fam.max_expire()
+  let floor = @policy.expire_at_of(
+    @port.now_ms(),
+    self.config.refresh_timeout_ms(),
+  )
+  let deadline = if by_family > floor {
+    by_family
+  } else {
+    floor
+  }
   self.store.apply(
     @port.PutRecord(
       self.keys.account_session(login_id),
       record.encode(),
-      fam.max_expire(),
+      deadline,
     ),
   )
 }

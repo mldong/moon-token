@@ -80,17 +80,31 @@ pub fn TokenError::not_login_reason(self : TokenError) -> NotLoginReason? {
 pub(all) struct BanRecord {
   until : Int64
   reason : String
+  /// 操作人（审计要"谁封的"）；空串＝未记录（旧数据解出来就是这个值）
+  operator : String
+  /// 封禁创建时刻（ms）；0＝未记录
+  created_at : Int64
 }
 
 ///|
-pub fn BanRecord::make(until : Int64, reason : String) -> BanRecord {
-  let b : BanRecord = { until, reason, }
+pub fn BanRecord::make(
+  until : Int64,
+  reason : String,
+  operator : String,
+  created_at : Int64,
+) -> BanRecord {
+  let b : BanRecord = { until, reason, operator, created_at, }
   b
 }
 
 ///|
 pub fn BanRecord::encode(self : BanRecord) -> String {
-  encode_record([("until", self.until.to_string()), ("reason", self.reason)])
+  encode_record([
+    ("until", self.until.to_string()),
+    ("reason", self.reason),
+    ("op", self.operator),
+    ("at", self.created_at.to_string()),
+  ])
 }
 
 ///|
@@ -102,6 +116,8 @@ pub fn BanRecord::decode(text : String) -> BanRecord? {
         BanRecord::make(
           record_field_int64(f, "until"),
           record_field_or(f, "reason", ""),
+          record_field_or(f, "op", ""),
+          record_field_int64(f, "at"),
         ),
       )
   }
@@ -160,11 +176,14 @@ pub fn RefreshRecord::decode(text : String) -> RefreshRecord? {
 pub(all) struct AccountSessionRecord {
   mut login_id : String
   mut attrs : Map[String, String]
+  /// 乐观锁版本号：只随属性写入递增。内存版单线程看不见丢更新，
+  /// Redis/SQL 侧读-改-写必须带上它，否则两个会话写互相覆盖。
+  mut version : Int64
 }
 
 ///|
 pub fn AccountSessionRecord::make(login_id : String) -> AccountSessionRecord {
-  let r : AccountSessionRecord = { login_id, attrs: Map([]), }
+  let r : AccountSessionRecord = { login_id, attrs: Map([]), version: 0L, }
   r
 }
 
@@ -172,6 +191,7 @@ pub fn AccountSessionRecord::make(login_id : String) -> AccountSessionRecord {
 pub fn AccountSessionRecord::encode(self : AccountSessionRecord) -> String {
   encode_record([
     ("login", self.login_id),
+    ("ver", self.version.to_string()),
     ("attrs", encode_record(self.attrs.to_array())),
   ])
 }
@@ -189,7 +209,11 @@ pub fn AccountSessionRecord::decode(text : String) -> AccountSessionRecord? {
           None => Map([])
           Some(map) => map
         }
-        let r : AccountSessionRecord = { login_id, attrs, }
+        let r : AccountSessionRecord = {
+          login_id,
+          attrs,
+          version: record_field_int64(f, "ver"),
+        }
         Some(r)
       }
     }

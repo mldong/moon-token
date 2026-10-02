@@ -15,6 +15,10 @@ pub(all) struct TokenConfig {
   mut kick_grace : @port.Duration
   mut concurrent : @port.ConcurrentPolicy
   mut refresh_timeout : @port.Duration
+  /// 同账号活会话上限；`-1`＝不限。超限按**登录时刻**先进先出注销最早的（见 docs/data-model.md §7.11）
+  mut max_sessions : Int
+  /// 被上限剔掉的那一枚怎么下线：Logout / Kick / Supersede 三档
+  mut overflow_exit : @port.OverflowExit
 }
 
 ///|
@@ -30,6 +34,8 @@ pub fn TokenConfig::default() -> TokenConfig {
     kick_grace: @port.Duration::from_millis(300_000L),
     concurrent: @port.Coexist,
     refresh_timeout: @port.Duration::from_days(30L),
+    max_sessions: 12,
+    overflow_exit: @port.Logout,
   }
   c
 }
@@ -92,6 +98,24 @@ pub fn LoginResult::make(
     refresh_token,
     reused,
   }
+  r
+}
+
+///|
+/// 在线列表的一行：索引级条目 + 它的会话载荷。
+/// `session = None` 表示这条在枚举之后已经没了（索引是派生缓存，落后于事实属正常）——
+/// 宁可这一页少几条，也不返回读不到的数据。
+pub(all) struct OnlineRow {
+  listing : @port.SessionListing
+  session : @port.SessionRecord?
+}
+
+///|
+pub fn OnlineRow::make(
+  listing : @port.SessionListing,
+  session : @port.SessionRecord?,
+) -> OnlineRow {
+  let r : OnlineRow = { listing, session, }
   r
 }
 

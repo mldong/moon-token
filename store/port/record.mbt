@@ -87,6 +87,9 @@ pub(all) struct FamilyMember {
   device : Device
   token : String
   expire_at : Int64
+  /// 登录时刻（ms）。`max_sessions` 的"先进先出"按它定序——载体（Redis HASH / SQL 成员表）
+  /// 不保证任何顺序，所以登录时刻必须显式存一份，不能靠"追加序"或拿 `expire_at` 顶替。
+  login_time : Int64
 }
 
 ///|
@@ -94,8 +97,9 @@ pub fn FamilyMember::make(
   device : Device,
   token : String,
   expire_at : Int64,
+  login_time : Int64,
 ) -> FamilyMember {
-  let m : FamilyMember = { device, token, expire_at, }
+  let m : FamilyMember = { device, token, expire_at, login_time, }
   m
 }
 
@@ -103,7 +107,8 @@ pub fn FamilyMember::make(
 pub fn FamilyMember::same(self : FamilyMember, other : FamilyMember) -> Bool {
   self.token == other.token &&
   self.device.id == other.device.id &&
-  self.expire_at == other.expire_at
+  self.expire_at == other.expire_at &&
+  self.login_time == other.login_time
 }
 
 ///|
@@ -142,6 +147,7 @@ pub fn FamilyRecord::encode(self : FamilyRecord) -> String {
       ("d", m.device.id),
       ("t", m.token),
       ("e", m.expire_at.to_string()),
+      ("lt", m.login_time.to_string()),
     ])
   })
   encode_record([
@@ -173,6 +179,9 @@ pub fn FamilyRecord::decode(text : String) -> FamilyRecord? {
                       Device::of(record_field_or(mf, "d", DEFAULT_DEVICE_ID)),
                       token,
                       record_field_int64(mf, "e"),
+                      // 旧串没有 lt：解成 0＝"登录时刻未知"，在淘汰排序里天然排最前，
+                      // 也就是升级前签发的会话会先被上限剔掉——比反过来要安全
+                      record_field_int64(mf, "lt"),
                     ),
                   )
                 }
@@ -247,4 +256,53 @@ pub fn FamilyRecord::max_expire(self : FamilyRecord) -> Int64 {
     }
   }
   best
+}
+
+///|
+/// 登录序比较：先比登录时刻，同刻用 token 字典序兜底——否则"谁最老"在两个后端上会各自抖。
+fn login_older(a : FamilyMember, b : FamilyMember) -> Bool {
+  a.login_time < b.login_time ||
+  (a.login_time == b.login_time && a.token < b.token)
+}
+
+///|
+/// 活成员里按**登录时刻升序**取前 k 个 token（`max_sessions` 的先进先出淘汰用）。
+/// 显式比 `login_time` 而不是吃数组顺序：Redis HASH 字段无序、SQL 成员表无天然行序，
+/// 三个后端必须对"谁最老"给出同一个答案。
+pub fn FamilyRecord::oldest_tokens(
+  self : FamilyRecord,
+  k : Int,
+  now : Int64,
+) -> Array[String] {
+  let live = self.members.filter((m : FamilyMember) => m.alive(now))
+  let taken : Array[Bool] = live.map((_ : FamilyMember) => false)
+  let out : Array[String] = []
+  let rounds = if k < live.length() {
+    k
+  } else {
+    live.length()
+  }
+  let mut round = 0
+  while round < rounds {
+    let mut best = -1
+    let mut j = 0
+    while j < live.length() {
+      if !taken[j] {
+        if best < 0 {
+          best = j
+        } else if login_older(live[j], live[best]) {
+          best = j
+        }
+      }
+      j += 1
+    }
+    if best < 0 {
+      round = rounds
+    } else {
+      taken[best] = true
+      out.push(live[best].token)
+      round += 1
+    }
+  }
+  out
 }

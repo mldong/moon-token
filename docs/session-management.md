@@ -210,3 +210,42 @@ async test "宽窗内 KickedOut、窗外 UnknownToken，sweep 返回被回收的
 | `disable` / `undo_disable` | — | — | — | — | 写 / 删 |
 | `update_*_session` | 改 extra | — | — | 改属性 | — |
 | `sweep` | 回收过期与墓碑 | 剔除过期成员 | 随 access 失效 | 随族到期 | 到期回收 |
+
+## 7. 跨账号枚举：在线用户列表那一页
+
+§1 那两个方法都是**按账号**查的（`get_token_list_by_login_id` / `get_device_list`）。
+后台的"在线用户"页要的是反过来：先枚举，再看是谁。为此端口补了两个读侧方法，应用层开了两个入口。
+
+```text
+// 第一步：只拿索引级条目（token / login_id / device / 登录时刻 / 到期），登录时刻反序
+let page = auth.list_online(@port.SessionFilter::all(), "", 20)
+// 第二步：只取这一页的详情，一次批量往返
+let rows = auth.load_online(page)
+for row in rows {
+  match row.session {
+    None => ()                              // 索引落后于事实：这条已经不在线
+    Some(record) => record.extra["ip"]      // 展示字段走 extra，本库不解释（§配置文档）
+  }
+}
+// 翻页：把上一页的 next_cursor 原样传进来；返回空串表示到底了
+let next = auth.list_online(@port.SessionFilter::make("u1", ""), page.next_cursor, 20)
+```
+
+四条口径，都是刻意定的：
+
+| 口径 | 为什么 |
+|---|---|
+| 条件只有 `login_id` / `device` 两个精确维度 | 没有模糊匹配、没有裸扫描。鉴权库开一条全库扫的路，等于送业务方一个 DoS 入口 |
+| `limit` 有服务端上限（100） | 传多大的数都不许超过它，"取全部"在端口层就被挡住 |
+| 枚举**不判活**，详情那一轮才判 | 索引是派生缓存，权威在 `T:`。所以一页里可能出现 `None`，宁可少几条也不返回错数据 |
+| 排序与游标都按登录时刻（同刻按 token 兜底） | 翻页要稳定；同一批数据在内存版／Redis 版／SQL 版必须给出同一个页序 |
+
+为什么分两步、不一步到位：一步把详情也带上，就等于"枚举时逐条读载荷"，
+那是 `1 + N + ΣM` 次读的老形状。两步走是**两次往返换一页**。
+
+被封禁的账号**照常出现在这一页里**（§4 的封禁压在会话之上，不改写会话）；
+要"封禁即不在线"，业务侧过滤或在封禁时补一次 `logout_by_id`。
+
+> 上面这段是 `text` 围栏而非 `moonbit`：`list_online` / `load_online` 尚未发版，
+> 而本页代码块要过"对注册表已发布件真编译"的门禁。发版后转成可跑块，
+> 待办记在 `docs/data-model.md` §8 末。
