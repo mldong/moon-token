@@ -1,8 +1,3 @@
-* text=auto eol=lf
-*.mbt text eol=lf
-*.moon.pkg text eol=lf
-*.moon.mod text eol=lf
-moon.work text eol=lf
-*.yml text eol=lf
-*.sh text eol=lf
-*.png binary
+# GitHub 的语言统计把 `moon.mod` 按扩展名认成 AMPL（`.mod` 是 AMPL 模型文件的扩展名），
+# 语言面板因此凭空多一格。只管统计，不设行尾规则——本仓的换行符一律按各文件原样存。
+*.mod linguist-detectable=false
