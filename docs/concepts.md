@@ -223,7 +223,7 @@ core/policy    decide_concurrent · decide_renewal
                decide_contains · classify_access 纯函数，零 IO、零 async
 core/app       TokenAuth                          一个用例一个方法：
                                                   取聚合 → 调领域服务 → 提交补丁 → 发事件
-core/guard     RouteGuard · run_guard             纯逻辑，不依赖任何 web 框架
+core/guard     RouteGuard · RoutePolicy    纯逻辑，不依赖任何 web 框架
 store/port     TokenStore · FamilyPatch · 键位 · 错误词汇表   共享内核
 store/memory   MemoryStore                        v1 唯一后端
 ```

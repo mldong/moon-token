@@ -124,6 +124,7 @@ bash examples/curl.sh                         # 另开终端：13 步端对端�
 | [刷新与轮转](docs/refresh-rotation.md) | 全量轮转语义、重放防护、为什么**不**校验绑定的 access 是否存活 |
 | [权限与角色](docs/permissions.md) | SPI 供数、`has_*` 与 `check_*` 两条路、AND/OR 裁决 |
 | [路由守卫](docs/route-guard.md) | 模式匹配、豁免优先级、怎么接到你选的 web 框架上 |
+| [路由权限策略](docs/route-policy.md) | 约定推导（`/sys/user/save` ⇒ `sys:user:save`）+ 例外清单覆盖；perms 与 roles 的叠加规则 |
 | [领域事件](docs/events.md) | 7 个事件、码值表、"落库后 fire"与观察者异常处理 |
 | [存储端口](docs/storage-port.md) | `TokenStore` 契约、`FamilyPatch` 意图补丁、惰性过期两档、怎么写自己的后端 |
 | [错误词汇表](docs/error-vocabulary.md) | 7 个未登录原因 + 5 类错误，以及映射成响应码的建议 |
