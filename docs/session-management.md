@@ -218,8 +218,13 @@ async test "宽窗内 KickedOut、窗外 UnknownToken，sweep 返回被回收的
 
 ```moonbit
 async fn enumerate_online() -> (Int, Int, Int, Int) raise {
+  // 两次登录必须落在不同毫秒：枚举按登录时刻反序，同毫秒才按 token 字典序兜底。
+  // 用真实时钟跑就会随机看到"最新那条不在页首"（CI 抓到过一次）。
+  let t : Array[Int64] = [1_700_000_000_000L]
+  @port.set_clock(Some(fn() { t[0] }))
   let a = auth()
   a.login("u1", device="pc") |> ignore
+  t[0] = t[0] + 1_000L
   let second = a.login("u2", device="pad")
   // 第一步：只拿索引级条目（token / login_id / device / 登录时刻 / 到期），登录时刻反序
   let page = a.list_online(@port.SessionFilter::all(), "", 1)
@@ -230,12 +235,14 @@ async fn enumerate_online() -> (Int, Int, Int, Int) raise {
   let only_u1 = a.list_online(@port.SessionFilter::make("u1", ""), "", 10)
   let head = (page.items)[0]
   let head_is_newest = if head.token == second.token { 1 } else { 0 }
-  (
+  let out = (
     page.items.length() + next.items.length(),
     head_is_newest,
     rows.length(),
     only_u1.items.length(),
   )
+  @port.set_clock(None)
+  out
 }
 
 async test "在线枚举：翻页不重不漏、详情一次批量取、条件只认精确字段" {
