@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 本地门禁：与 CI 的 verify job 同判据。断言四件事：零警告、用例条数=61、0 failed、文档与 README 真跑。
+# 本地门禁：与 CI 的 verify job 同判据。断言四件事：零警告、用例条数=73、0 failed、文档与 README 真跑。
 set -euo pipefail
 export MOON_HOME="${MOON_HOME:-$HOME/.moon}"
 cd "$(dirname "$0")/.."
@@ -17,8 +17,8 @@ fi
 
 test_log=$(moon test --target wasm --no-render 2>&1)
 printf '%s\n' "$test_log" | tail -3
-printf '%s' "$test_log" | grep -q "Total tests: 61" || { echo "GATE FAIL: 用例条数不是 61（矩阵增删要同步这里）" >&2; exit 1; }
+printf '%s' "$test_log" | grep -q "Total tests: 73" || { echo "GATE FAIL: 用例条数不是 73（矩阵增删要同步这里）" >&2; exit 1; }
 printf '%s' "$test_log" | grep -q "failed: 0" || { echo "GATE FAIL: 有失败用例" >&2; exit 1; }
 bash scripts/docs-check.sh
 bash scripts/readme-check.sh
-echo "GATE PASS: 零警告 + Total tests: 61 + 0 failed + 文档代码块与 README 对本地源码真跑"
+echo "GATE PASS: 零警告 + Total tests: 73 + 0 failed + 文档代码块与 README 对本地源码真跑"

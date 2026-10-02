@@ -1,4 +1,4 @@
-name = "mldong/moon-token"
+name = "mldong/moon-token-store-file"
 
 version = "0.1.7"
 
@@ -10,7 +10,7 @@ readme = "README.md"
 
 repository = "https://github.com/mldong/moon-token"
 
-description = "DDD-layered login-state and session toolkit for MoonBit: aggregates, pure domain policies, async storage port, route guard DSL"
+description = "File-backed TokenStore for moon-token: in-memory authority with write-through to a directory, so a restart keeps sessions without Redis or MySQL"
 
 import {
   "mldong/moon-token-store@0.1.7",

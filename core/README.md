@@ -129,5 +129,5 @@ async test "被踢方拿到的是 KickedOut，不是笼统未登录" {
 
 ## 许可与模块
 
-Apache-2.0。同家族两模块：`mldong/moon-token`（本包）+ `mldong/moon-token-store`（契约与内存适配器），
+Apache-2.0。同家族三模块：`mldong/moon-token`（本包）、`mldong/moon-token-store`（契约与内存适配器）、`mldong/moon-token-store-file`（文件后端），
 同版本号、按拓扑序发布。

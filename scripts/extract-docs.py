@@ -17,6 +17,8 @@ PACKAGES = [
     ("event", "mldong/moon-token/event", None),
     ("port", "mldong/moon-token-store/port", None),
     ("mem", "mldong/moon-token-store/memory", "@mem"),
+    ("file", "mldong/moon-token-store-file/file", None),
+    ("fs", "moonbitlang/async/fs", None),
 ]
 
 

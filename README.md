@@ -6,8 +6,9 @@ MoonBit 生态的**登录态 / 会话标准件**。DDD 分层、async-first 契�
 English summary: a login-state and session toolkit for MoonBit — layered DDD (aggregates,
 pure domain policies, async storage port), pluggable storage, exact logout reasons
 (kicked / superseded / expired never collapse into "not logged in"), multi-realm sessions,
-a route-guard DSL, and domain events. v1 ships the in-memory store; durable backends
-(MySQL/Postgres/SQLite via a transactional driver, Redis via Lua) are the next round.
+a route-guard DSL, and domain events. backends are pluggable: the in-memory store ships in the
+contract module, and a file-backed store (no Redis, no MySQL) persists sessions across
+restarts; transactional/Redis drivers follow the same port.
 
 ## 特性
 
@@ -19,7 +20,7 @@ a route-guard DSL, and domain events. v1 ships the in-memory store; durable back
 | 精确反馈 | 被踢 / 被顶 / 过期 / 封禁各报各的原因，不塌成"未登录" |
 | 并发三态 | `Coexist`（默认共存）/ `Supersede`（顶人下线）/ `Shared`（同设备共用一个 token） |
 | 滑动续期 | `SlideOnAccess`（带节流窗，默认 60s）/ `IdleMark`（活跃标记） |
-| 可插拔存储 | async 仓储端口 + 意图补丁（`FamilyPatch`），换后端不改业务代码 |
+| 可插拔存储 | async 仓储端口 + 意图补丁（`FamilyPatch`），换后端不改业务代码；已交付**内存**与**文件**两个后端 |
 | 全量轮转 | `rotate` 换新整对，旧 access 与旧 refresh 同时失效；**不校验绑定 access 是否存活** |
 | 守卫 DSL | 路径模式 + 断言闭包链，纯逻辑、不绑定任何 web 框架 |
 | 领域事件 | 7 个事实事件，落库后 fire，观察者异常不影响主流程 |
@@ -135,6 +136,7 @@ bash examples/curl.sh                         # 另开终端：13 步端对端�
 | [配置与默认值](docs/configuration.md) | 十三项配置的默认值与定这个值的理由 |
 | [时钟与熵源](docs/clock-and-entropy.md) | 可注入时钟怎么用、三档目标的熵源差异与 `abort` 守卫 |
 | [测试指南](docs/testing.md) | 三场景怎么落地：注入时钟、计数型 store、断言精确原因 |
+| [文件后端](docs/file-store.md) | 零 Redis/MySQL 的持久化：内存为主 + 写穿透、三条实测边界（fsync 代价、原子改名、键不落文件名） |
 | [数据模型](docs/data-model.md) | 六类记录字段、关系、TTL 公式、Redis/SQL 物理映射、变更纪律 |
 | [常见问题](docs/faq.md) | 集群、多实例、序列化兼容、与 JWT 的取舍 |
 
@@ -147,10 +149,11 @@ bash examples/curl.sh                         # 另开终端：13 步端对端�
 |---|---|---|---|
 | 核心 | `core/` | `mldong/moon-token` | 应用层用例、领域模型与裁决、守卫、事件、token 风格 → [模块 README](core/README.md) |
 | 存储契约 | `store/` | `mldong/moon-token-store` | `TokenStore` 端口、共享内核（值对象/键位/补丁/错误词汇/线格式）、内存适配器 → [模块 README](store/README.md) |
+| 文件后端 | `store-file/` | `mldong/moon-token-store-file` | 内存为主 + 写穿透的文件持久化 → [模块 README](store-file/README.md) |
 | 示例 | `examples/` | 不发布 | 可运行 HTTP 示例 + 13 步 curl 剧本 |
 
-`docs/` 那 14 篇**不在发布包里**（模块 zip 只含模块目录），所以两个模块 README 里的文档链接
-一律给 GitHub 绝对地址。这三处 README 与 `docs/*.md` 同受 `scripts/docs-check.sh` 管：
+`docs/` 那 16 篇**不在发布包里**（模块 zip 只含模块目录），所以三个模块 README 里的文档链接
+一律给 GitHub 绝对地址。这四处 README 与 `docs/*.md` 同受 `scripts/docs-check.sh` 管：
 里面的每个 `moonbit` 块都会被逐字灌进"只依赖注册表已发布件"的独立工程真编译真跑。
 
 ## 设计与规范

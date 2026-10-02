@@ -180,4 +180,5 @@ async test "两个 realm 各自独立：跨体系不认账" {
 
 - `store-moondb`（事务型后端）、`store-redis`（Lua 原子 `get_and_del`）。
 - `moon-token-web` 防腐层：`TokenError` → 响应码，`RouteGuard` → 中间件。
-- 家族同版本号、按拓扑序发（store 先、core 后）。
+- 家族同版本号、按拓扑序发（store 先，core 与 store-file 后）。
+- 已经交付的文件后端 `store-file` 走的是同一个端口；Redis 版要补的是 `Z` 索引与 Lua 原子取删。
