@@ -288,7 +288,7 @@ async test "MB-D5 恒 200 那一档：只换响应写法，判决与精确原因
 | 超管 `GET /admin/panel` | 200 | `{"code":0,"msg":"ok","data":"hello boss"}` |
 | 同名 cookie 腿 | 200 | `{"code":0,"msg":"ok","data":"hello demo-user"}` |
 
-两档选哪档都不影响判决面，`scripts/mw-smoke.sh` 那 18 格测的是**默认档**（真状态码，REST 消费方）；
+两档选哪档都不影响判决面，`scripts/mw-smoke.sh` 那 17 格测的是**默认档**（真状态码，REST 消费方）；
 框架壳要是走恒 200，判据就该换成"逐格断 body 的 `code`"，别两边都只断"非 200"或"code≠0"。
 
 ## 7. 判据：豁免面没有主体、只问业务一轮
