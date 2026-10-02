@@ -159,7 +159,35 @@ test "opaque_style_with：宿主给 32 字节，两次签发不同" {
 本库**不宣称**它等同 ChaCha20 的强度；它承担的是两件事：给定种子可复现、不给种子不可预测。
 要接你自己的 CSPRNG，用 `opaque_style_with`，别改库。
 
-## 6. 两句话总结
+## 6. 能不能拿 `moonbitlang/x` 的时间包当内置时钟？
+
+**不能当时间源，可以当"读法"。** 实测结论（工具链同版本，`moonbitlang/x@0.5.5`）：
+
+- `x/time` 里**没有读当前时间的入口**：`@time.Time` 这个类型不存在（编译器直接报
+  `The type/trait @time.Time is not found`），整个包的公开接口里 `now` 命中 0 处；`x/sys` 也没有。
+  它是日历 / 时区 / 时长**格式化**库（`PlainDate` / `ZonedDateTime` / `Duration` / 解析与算术），不是时钟。
+- core 侧同样没有 `time` / `sys` 包。跨档唯一可用的时间源仍是 `@env.now()`（`UInt64` 毫秒）——
+  这就是本库自己带 `Duration` 值对象、并把时间收敛到一个可注入槽的原因。
+
+它的正当用武之地是**展示层**：把库里的绝对毫秒换成人类可读时刻，实测可用——
+
+```text
+@time.ZonedDateTime::from_unix_second(ms / 1000L, nanosecond=(ms % 1000L).to_int())
+→ 2026-10-01T23:47:25.459Z
+```
+
+但**不建议把它引进 core/store**，三条理由：
+
+1. 破 v1 红线"零第三方运行时依赖"（目前只依赖官方 `moonbitlang/async`）。
+2. `Duration` 是**契约的一部分**：`TokenConfig` 八个字段与 `TokenStore` 的签名都在用它。
+   换成 `x/time.Duration` 会把这个依赖传染给 v2 的每一个后端实现。
+3. `x/time` 的 `Duration::of(hours?, minutes?, seconds?, nanoseconds?)` **没有毫秒构造器**，
+   而本库的默认值恰好是 6h / 30d / 60s / 5min 这类"毫秒整数"语义——换过去只会更绕。
+
+结论：时间源保持现状（`@env.now()` + 可注入槽）；要给用户看"几点几分过期"，
+在你的展示层引 `moonbitlang/x` 换算即可，库不掺和。
+
+## 7. 两句话总结
 
 - 时效类断言一律注入时钟、测完还原；不要 `sleep`，也不要在断言里算真实毫秒差（会漂 1ms 偶发红）。
 - 生产环境请说得出你的 token 是从哪个入口来的。答不上来，就把 `opaque_style()` 的 `abort` 当成它在帮你。

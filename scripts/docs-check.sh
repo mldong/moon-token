@@ -13,7 +13,9 @@ WORK=$(mktemp -d "${TMPDIR:-/tmp}/moon-token-docs-check.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
 shopt -s nullglob
-files=(docs/*.md)
+# 文档 + 两个**已发布模块**的 README：mooncakes 页面渲染的就是模块目录里那份，
+# 它必须是自成一体的说明（包里没有仓库根 README，也没有 docs/）。
+files=(docs/*.md core/README.md store/README.md)
 if [ ${#files[@]} -eq 0 ]; then
   echo "DOCS CHECK FAIL: docs/ 下一个文件都没有（要么补文档，要么把这条门禁摘掉，别留死格）" >&2
   exit 1
@@ -21,8 +23,8 @@ fi
 
 checked=0
 for doc in "${files[@]}"; do
-  name=$(basename "$doc" .md)
-  slug=$(printf '%s' "$name" | tr -cd 'a-z0-9')
+  # slug 取"路径去掉非字母数字"，这样 core/README.md 与 store/README.md 不会撞名
+  slug=$(printf '%s' "$doc" | tr -cd 'a-z0-9')
   dir="$WORK/$slug"
   mkdir -p "$dir/src"
   echo "── $doc"

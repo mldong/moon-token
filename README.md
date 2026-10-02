@@ -132,6 +132,21 @@ bash examples/curl.sh                         # 另开终端：13 步端对端�
 | [测试指南](docs/testing.md) | 三场景怎么落地：注入时钟、计数型 store、断言精确原因 |
 | [常见问题](docs/faq.md) | 集群、多实例、序列化兼容、与 JWT 的取舍 |
 
+## 模块与文档在哪
+
+本仓一个 git 仓库、三个 MoonBit 模块，**发布到 mooncakes 的包根就是模块目录**，
+所以每个已发布模块自己带一份 README（mooncakes 页面渲染那份，不是本文件）：
+
+| 模块 | 目录 | 发布名 | 说明 |
+|---|---|---|---|
+| 核心 | `core/` | `mldong/moon-token` | 应用层用例、领域模型与裁决、守卫、事件、token 风格 → [模块 README](core/README.md) |
+| 存储契约 | `store/` | `mldong/moon-token-store` | `TokenStore` 端口、共享内核（值对象/键位/补丁/错误词汇/线格式）、内存适配器 → [模块 README](store/README.md) |
+| 示例 | `examples/` | 不发布 | 可运行 HTTP 示例 + 13 步 curl 剧本 |
+
+`docs/` 那 14 篇**不在发布包里**（模块 zip 只含模块目录），所以两个模块 README 里的文档链接
+一律给 GitHub 绝对地址。这三处 README 与 `docs/*.md` 同受 `scripts/docs-check.sh` 管：
+里面的每个 `moonbit` 块都会被逐字灌进"只依赖注册表已发布件"的独立工程真编译真跑。
+
 ## 设计与规范
 
 分层、端口形状、默认值口径与测试矩阵见仓库内文档；本 README 只保证**照着敲就能跑**。
