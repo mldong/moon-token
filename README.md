@@ -130,6 +130,7 @@ bash examples/curl.sh                         # 另开终端：13 步端对端�
 | [配置与默认值](docs/configuration.md) | 八项配置的默认值与定这个值的理由 |
 | [时钟与熵源](docs/clock-and-entropy.md) | 可注入时钟怎么用、三档目标的熵源差异与 `abort` 守卫 |
 | [测试指南](docs/testing.md) | 三场景怎么落地：注入时钟、计数型 store、断言精确原因 |
+| [数据模型](docs/data-model.md) | 五类记录字段、关系、TTL 公式、Redis/SQL 物理映射、变更纪律 |
 | [常见问题](docs/faq.md) | 集群、多实例、序列化兼容、与 JWT 的取舍 |
 
 ## 模块与文档在哪

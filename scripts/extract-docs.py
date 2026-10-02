@@ -11,6 +11,7 @@ import sys
 # (别名, moon.pkg 里的路径, 是否需要显式别名)
 PACKAGES = [
     ("app", "mldong/moon-token/app", None),
+    ("domain", "mldong/moon-token/domain", None),
     ("style", "mldong/moon-token/style", None),
     ("guard", "mldong/moon-token/guard", None),
     ("event", "mldong/moon-token/event", None),
