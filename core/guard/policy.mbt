@@ -14,9 +14,9 @@
 /// ④ 其余                 ⇒ LoginOnly  （只验登录，不验权限）
 /// ```
 ///
-/// ② 在 ③ 之前：**例外优先于约定**。推导与声明不一致是常态而非错误——owner 明确：
-/// `/wf/processTask/jumpAbleTaskNameList` 确实只在有 `wf:processTask:execute` 时才用得到，
-/// 这类换名合法。所以装载时不报错，只把"没吃推导的"列出来给人审（见 `exceptions`）。
+/// ② 在 ③ 之前：**例外优先于约定**。推导与实际要求不一致是常态而非错误——
+/// 某个查询端点可能确实归在另一个权限码下（路径叫 `start`、要的是 `stop` 权限）。
+/// 所以装载时不报错，只把"没吃推导的"列出来给人审（见 `exceptions`）。
 
 ///|
 /// 一条路由的权限要求。`perms` 与 `roles` 都非空时是 **AND**（既要这个权限、也要这个角色），
@@ -73,12 +73,16 @@ pub fn RouteRule::with_roles(
 
 ///|
 pub(all) struct RoutePolicy {
-  /// 公开面：命中即完全放行（= 各栈的 ignoreUrlList + `@SaIgnore`）
+  /// 公开面：命中即完全放行（各框架的"忽略鉴权"标记／白名单清单都落在这里）
   mut exempt : Array[String]
   /// 例外清单：优先于推导
   mut rules : Array[RouteRule]
   /// 关掉推导 ⇒ 未覆盖的端点一律只验登录。（`derive` 是 MoonBit 保留字，字段名只能绕）
   mut by_convention : Bool
+  /// 推导规则本身。**本库不替任何项目定权限码长什么样**：默认那条是"段用 ':' 连"，
+  /// 你自己的规范就换掉它（RESTful 风格、kebab-case、加模块前缀都行）。
+  /// 返回 `None` 表示"这条路径推不出来"，调用方退成只验登录。
+  mut deriver : (String) -> String?
   /// 超管是否跳过权限校验（仍要求已登录）。超管身份由业务判——库里没有用户模型
   mut super_bypass : Bool
 }
@@ -89,6 +93,7 @@ pub fn RoutePolicy::new() -> RoutePolicy {
     exempt: [],
     rules: [],
     by_convention: true,
+    deriver: derive_perm,
     super_bypass: true,
   }
   p
@@ -132,7 +137,8 @@ fn join_colon(segs : Array[String]) -> String {
 }
 
 ///|
-/// 约定：`/sys/user/save` ⇒ `sys:user:save`，段用 `:` 连、空段丢弃。
+/// **默认**推导规则：`/api/orders/save` ⇒ `api:orders:save`，段用 `:` 连、空段丢弃。
+/// 这只是开箱即用的默认值，不是本库给所有用户立的规矩——换规则见 `RoutePolicy::deriver`。
 /// 含路径变量段（`{module}` 这种）时返回 `None`——推出来的码没有意义，
 /// 这类端点必须走例外清单或豁免（框架里 `/{module}/{tableName}/export` 就是豁免的）。
 pub fn derive_perm(path : String) -> String? {
@@ -216,7 +222,7 @@ pub fn RoutePolicy::resolve(self : RoutePolicy, path : String) -> RouteAccess {
       Some(rule) => Guarded(rule)
       None =>
         if self.by_convention {
-          match derive_perm(path) {
+          match (self.deriver)(path) {
             Some(perm) => Guarded(RouteRule::make(path, [perm]))
             None => LoginOnly
           }
@@ -247,7 +253,7 @@ pub fn RoutePolicy::exceptions(self : RoutePolicy, paths : Array[String]) -> Arr
     Public => true
     LoginOnly => true
     Guarded(rule) => {
-      let derived = match derive_perm(path) {
+      let derived = match (self.deriver)(path) {
         None => ""
         Some(v) => v
       }
