@@ -8,7 +8,8 @@ pure domain policies, async storage port), pluggable storage, exact logout reaso
 (kicked / superseded / expired never collapse into "not logged in"), multi-realm sessions,
 a route-guard DSL, and domain events. backends are pluggable: the in-memory store ships in the
 contract module, and a file-backed store (no Redis, no MySQL) persists sessions across
-restarts; transactional/Redis drivers follow the same port.
+restarts; Redis and SQL drivers are reserved extension points on the same port, to be picked up
+once third-party drivers mature.
 
 ## 特性
 
@@ -45,7 +46,7 @@ moon add mldong/moon-token-store   # 内存实现（核心包已依赖，通常�
 // port / memory 取自 mldong/moon-token-store；跑 async 用例另需
 // moon add moonbitlang/async
 
-// 1. 装一个存储（内存实现；v2 起可换事务型/Lua 型后端）
+// 1. 装一个存储（内存实现；Redis / SQL 后端是端口上预留的口子，等第三方驱动库稳定再实现）
 let store = @mem.MemoryStore::new("user")
 
 // 2. 权限源由业务实现（端口是 async，查库不用绕路）
@@ -178,7 +179,8 @@ bash scripts/gate.sh     # 本地门禁：零警告 + 用例条数与矩阵一�
 ## 已知限制
 
 - **存储交付了两档，都没做跨实例共享**。内存版重启即清零；文件版（`store-file`）在**同机同目录**内
-  一致，多实例共享会话要走 Redis 后端（同一端口的下一个适配器，业务代码不动）。
+  一致。多实例共享会话要靠 Redis 后端，但那是端口上**预留的口子**、不是排期里的下一版：
+  等第三方 Redis / MySQL 库稳定后再实现（届时业务代码与适配接口一行都不用改）。
 - **熵源分档**：默认 `opaque_style()` 取平台熵，取不到即 `abort`（绝不静默回落到固定种子）。
   `wasm-gc` 档无平台熵源，需改用 `opaque_style_with_seed` 或 `opaque_style_with` 显式注入；
   Windows native 目标需 MSVC 工具链（`rand_s`），Linux/CI 与 wasm 档不受影响。

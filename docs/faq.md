@@ -176,9 +176,16 @@ async test "两个 realm 各自独立：跨体系不认账" {
 不适合：无状态验签场景（那是 JWT 的活）、跨服务共享密钥的 SSO（v1 没有这个概念）、
 需要把会话塞进 CDN 边缘的场景。
 
-## Q14 v2 有什么
+## Q14 还没做的那两个后端，什么时候做
 
-- `store-moondb`（事务型后端）、`store-redis`（Lua 原子 `get_and_del`）。
-- `moon-token-web` 防腐层：`TokenError` → 响应码，`RouteGuard` → 中间件。
-- 家族同版本号、按拓扑序发（store 先，core 与 store-file 后）。
-- 已经交付的文件后端 `store-file` 走的是同一个端口；Redis 版要补的是 `Z` 索引与 Lua 原子取删。
+**端口上预留的口子，不在当前排期里。** `store-redis`（`Z` 索引 + Lua 原子 `get_and_del`）与
+事务型 SQL 后端（MySQL 8 那条 `get_and_del` 得走事务）要等第三方驱动库稳定之后再实现，
+判据很具体：能否在 wasm 与 native 两个目标上都跑通并保持版本线同步。第三方成熟之前先自己搓一层
+客户端，等于把别人正在收敛的接口焊进我们的依赖面，不值。
+
+口子本身已经留好：`TokenStore` 那八个方法与意图补丁不随后端变，`data-model.md` §6 已经把
+Redis 与 SQL 两套物理映射（含 "`T:` 的 TTL 要设到 `expire_at + kick_grace`" 这类会静默掉原因的坑）钉死，
+届时实现只需照表填，业务代码与适配接口一行都不用改。
+
+顺带更正这条老答案里的一处过期信息：web 防腐层已经交付，就是 `mldong/moon-token-moonback`
+（逐路由守卫、主体进请求上下文、失败映射状态码或换成框架自己的应答信封）。
