@@ -262,11 +262,14 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::login(
 }
 
 ///|
-/// 鉴权裁决单点：空 token / 无会话 / 墓碑态 / 过期 / 活跃超时 / 封禁各报各的原因
-pub async fn[S : @port.TokenStore, P] TokenAuth::check_login(
+/// 鉴权那条腿的单体：判活、判封禁、按策略写回续期或活跃标记，**只读一次 `T:`**，
+/// 并把读到的会话一并交出去——`check_login` 只要登录号，`authenticate` 还要设备与到期点。
+/// 两个公开方法各读各的话，一次受保护请求就会把同一枚会话读两遍（A43 钉住条数）：
+/// 内存版无所谓，Redis 版就是每请求多一次往返，而这层存在的理由恰恰是"少往返"。
+async fn[S : @port.TokenStore, P] TokenAuth::verify(
   self : TokenAuth[S, P],
   token : String,
-) -> String raise @port.TokenError {
+) -> (String, @domain.TokenSession) raise @port.TokenError {
   if token.trim().is_empty() {
     raise @port.NotLogin(@port.AbsentToken)
   }
@@ -327,7 +330,17 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::check_login(
       )
     }
   }
-  session.login_id()
+  (session.login_id(), session)
+}
+
+///|
+/// 鉴权裁决单点：空 token / 无会话 / 墓碑态 / 过期 / 活跃超时 / 封禁各报各的原因
+pub async fn[S : @port.TokenStore, P] TokenAuth::check_login(
+  self : TokenAuth[S, P],
+  token : String,
+) -> String raise @port.TokenError {
+  let (login_id, _) = self.verify(token)
+  login_id
 }
 
 ///|
@@ -701,11 +714,7 @@ pub async fn[S : @port.TokenStore, P : @port.PermissionProvider] TokenAuth::auth
   self : TokenAuth[S, P],
   token : String,
 ) -> (String, @port.PermissionRecord) raise @port.TokenError {
-  let login_id = self.check_login(token)
-  let session = match self.read_session(token) {
-    None => raise @port.NotLogin(@port.UnknownToken)
-    Some(s) => s
-  }
+  let (login_id, session) = self.verify(token)
   let record = self.load_grants(
     token,
     login_id,

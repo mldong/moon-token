@@ -702,3 +702,105 @@ async test "A42 反查索引落后于会话时，续期把它补回来（T: 权�
   assert_eq(auth.kickout("u2"), 1)
   assert_eq(access_code(auth, alive.token), @port.KickedOut.code())
 }
+
+///|
+/// A43 的探针：把内存适配器包一层，只数"这枚会话的 `T:` 键被读了几次"。
+/// 存在理由：适配层的合同句是"一次受保护请求只做一次 `T:` 读"，而这条**只数 SPI 次数测不出来**——
+/// 授权快照命中与否，不影响会话本身被读几遍。盯键名的话也不用给键分类，
+/// 测试先把要盯的那一个键名塞进探针即可。
+struct StoreReadProbe {
+  mut token_reads : Int
+  mut watched : String
+}
+
+///|
+let sprobe : StoreReadProbe = { token_reads: 0, watched: "", }
+
+///|
+pub(all) struct ReadCountStore {
+  inner : @mem.MemoryStore
+}
+
+///|
+pub impl @port.TokenStore for ReadCountStore with fn get(self, key) {
+  if key == sprobe.watched {
+    sprobe.token_reads += 1
+  } else {
+    ()
+  }
+  self.inner.get(key)
+}
+
+///|
+pub impl @port.TokenStore for ReadCountStore with fn set(self, key, payload, expire_at) {
+  self.inner.set(key, payload, expire_at)
+}
+
+///|
+pub impl @port.TokenStore for ReadCountStore with fn del(self, keys) {
+  self.inner.del(keys)
+}
+
+///|
+pub impl @port.TokenStore for ReadCountStore with fn get_and_del(self, key) {
+  self.inner.get_and_del(key)
+}
+
+///|
+pub impl @port.TokenStore for ReadCountStore with fn apply(self, patch) {
+  self.inner.apply(patch)
+}
+
+///|
+pub impl @port.TokenStore for ReadCountStore with fn sweep(self, now) {
+  self.inner.sweep(now)
+}
+
+///|
+pub impl @port.TokenStore for ReadCountStore with fn get_many(self, keys) {
+  self.inner.get_many(keys)
+}
+
+///|
+pub impl @port.TokenStore for ReadCountStore with fn list_sessions(
+  self,
+  filter,
+  cursor,
+  limit,
+) {
+  self.inner.list_sessions(filter, cursor, limit)
+}
+
+///|
+pub extend ReadCountStore with @port.TokenStore::{
+  get,
+  set,
+  del,
+  get_and_del,
+  apply,
+  sweep,
+  get_many,
+  list_sessions,
+}
+
+///|
+async test "A43 一次鉴权只做一次 T: 读：authenticate 不重复读同一枚会话" {
+  @port.set_clock(Some(fn() { now_ms() }))
+  let p : FixedPerms = { permissions: ["user:info"], roles: [] }
+  let auth = @app.TokenAuth::new(
+    "cnt",
+    @app.TokenConfig::default(),
+    ReadCountStore::{ inner: @mem.MemoryStore::new("cnt") },
+    p,
+    @style.opaque_style(),
+  )
+  let t = auth.login("u1", device="pc").token
+  sprobe.watched = "cnt:T:" + t
+  sprobe.token_reads = 0
+  auth.authenticate(t) |> ignore
+  // 判身份要读一次会话，取授权快照与超管位不该再把同一枚会话读第二遍
+  assert_eq(sprobe.token_reads, 1)
+  sprobe.token_reads = 0
+  auth.has_permission(t, ["user:info"]) |> ignore
+  assert_eq(sprobe.token_reads, 1)
+}
