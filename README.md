@@ -55,15 +55,15 @@ pub(all) struct MyPerms {
   roles : Array[String]
 }
 
-impl @port.PermissionProvider for MyPerms with fn get_permissions(self, _login_id, _device) {
+impl @port.PermissionProvider for MyPerms with fn get_permissions(self, _login_id, _device, _extra) {
   self.permissions
 }
 
-impl @port.PermissionProvider for MyPerms with fn get_roles(self, _login_id, _device) {
+impl @port.PermissionProvider for MyPerms with fn get_roles(self, _login_id, _device, _extra) {
   self.roles
 }
 
-impl @port.PermissionProvider for MyPerms with fn is_super_admin(self, _login_id, _device) {
+impl @port.PermissionProvider for MyPerms with fn is_super_admin(self, _login_id, _device, _extra) {
   false
 }
 

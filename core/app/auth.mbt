@@ -102,6 +102,7 @@ async fn[S : @port.TokenStore, P] TokenAuth::issue(
   login_id : String,
   device : @port.Device,
   remember : Bool,
+  extra : Map[String, String]?,
 ) -> LoginResult raise @port.TokenError {
   let now = @port.now_ms()
   let span = if remember {
@@ -115,6 +116,12 @@ async fn[S : @port.TokenStore, P] TokenAuth::issue(
   let session = @domain.TokenSession::make(
     token, login_id, device, now, expire_at,
   )
+  match extra {
+    Some(m) => for k, v in m {
+      session.set_extra(k, Some(v))
+    }
+    None => ()
+  }
   session.set_refresh_token(refresh_token)
   self.store.set(
     self.keys.token(token),
@@ -136,6 +143,7 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::login(
   login_id : String,
   device? : String = "",
   remember? : Bool = false,
+  extra? : Map[String, String]? = None,
 ) -> LoginResult raise @port.TokenError {
   if login_id.trim().is_empty() {
     // 主键缺失是调用方写错了，必须响亮报错，不能拿空串当身份落库
@@ -176,7 +184,7 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::login(
           )
         }
       }
-      let result = self.issue(login_id, dev, use_remember)
+      let result = self.issue(login_id, dev, use_remember, extra)
       self.events.fire(
         @event.TokenEvent::make(
           @event.LoggedIn,
@@ -195,7 +203,7 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::login(
       match self.read_session(existing) {
         None => {
           // 族里记着但会话已没：退回新签，别把一个死 token 当有效返回
-          let result = self.issue(login_id, dev, use_remember)
+          let result = self.issue(login_id, dev, use_remember, extra)
           self.events.fire(
             @event.TokenEvent::make(
               @event.LoggedIn,
@@ -213,6 +221,21 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::login(
             // 复用同一枚 token 也算"又登录了一次"：成员要移回队尾。
             // 不刷新的话，一台天天复登的老设备在先进先出里永远排最前，会被上限先剔掉
             self.store.apply(@port.RefreshLogin(login_id, existing, now))
+            // 复用会话的 extra 要刷新：登录属性（appCode/ip/ua）以最近一次登录为准——
+            // 与 boot2 每次登录重写 session 的 LoginUser 同语义
+            match extra {
+              Some(m) => {
+                for k, v in m {
+                  session.set_extra(k, Some(v))
+                }
+                self.store.set(
+                  self.keys.token(existing),
+                  session.payload(),
+                  self.config.key_expire_at(session.expire_at()),
+                )
+              }
+              None => ()
+            }
             LoginResult::make(
               existing,
               login_id,
@@ -222,7 +245,7 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::login(
               true,
             )
           } else {
-            let result = self.issue(login_id, dev, use_remember)
+            let result = self.issue(login_id, dev, use_remember, extra)
             self.events.fire(
               @event.TokenEvent::make(
                 @event.LoggedIn,
@@ -617,6 +640,7 @@ async fn[S : @port.TokenStore, P : @port.PermissionProvider] TokenAuth::load_gra
   login_id : String,
   device : @port.Device,
   expire_at : Int64,
+  extra : Map[String, String],
 ) -> @port.PermissionRecord raise @port.TokenError {
   let key = self.keys.grants(token)
   let cached = match self.store.get(key) {
@@ -626,9 +650,9 @@ async fn[S : @port.TokenStore, P : @port.PermissionProvider] TokenAuth::load_gra
   match cached {
     Some(record) => record
     None => {
-      let perms = self.perms.get_permissions(login_id, Some(device))
-      let roles = self.perms.get_roles(login_id, Some(device))
-      let super_admin = self.perms.is_super_admin(login_id, Some(device))
+      let perms = self.perms.get_permissions(login_id, Some(device), extra)
+      let roles = self.perms.get_roles(login_id, Some(device), extra)
+      let super_admin = self.perms.is_super_admin(login_id, Some(device), extra)
       let record = @port.PermissionRecord::make(
         login_id,
         perms,
@@ -667,6 +691,7 @@ pub async fn[S : @port.TokenStore, P : @port.PermissionProvider] TokenAuth::auth
     login_id,
     session.device(),
     session.expire_at(),
+    session.extras(),
   )
   (login_id, record)
 }
@@ -910,11 +935,17 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::rotate(
       }
   }
   // 旧 access 一并作废：全量轮转的语义是"整对换新"
+  // 轮转延续登录属性：新会话的 extra 从旧会话搬（appCode/ip/ua 不因轮转丢失）
+  let old_extra : Map[String, String]? = match self.read_session(binding.access_token) {
+    None => None
+    Some(old_session) => Some(old_session.extras())
+  }
   self.store.apply(@port.RemoveTokens(binding.login_id, [binding.access_token]))
   let result = self.issue(
     binding.login_id,
     @port.Device::of(binding.device_id),
     false,
+    old_extra,
   )
   self.events.fire(
     @event.TokenEvent::make(

@@ -9,11 +9,11 @@ pub(all) struct P {
   roles : Array[String]
 }
 
-pub impl @port.PermissionProvider for P with fn get_permissions(self, _login_id, _device) {
+pub impl @port.PermissionProvider for P with fn get_permissions(self, _login_id, _device, _extra) {
   self.permissions
 }
 
-pub impl @port.PermissionProvider for P with fn get_roles(self, _login_id, _device) {
+pub impl @port.PermissionProvider for P with fn get_roles(self, _login_id, _device, _extra) {
   self.roles
 }
 
@@ -21,6 +21,7 @@ pub impl @port.PermissionProvider for P with fn is_super_admin(
   _self,
   _login_id,
   _device,
+  _extra,
 ) {
   false
 }

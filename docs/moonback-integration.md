@@ -64,6 +64,7 @@ pub impl @port.PermissionProvider for DocPerms with fn get_permissions(
   _self,
   login_id,
   _device,
+  _extra,
 ) {
   if login_id == "demo-user" { ["api:user:info", "sys:user:save"] } else { [] }
 }
@@ -73,6 +74,7 @@ pub impl @port.PermissionProvider for DocPerms with fn get_roles(
   _self,
   login_id,
   _device,
+  _extra,
 ) {
   if login_id == "boss" { ["admin"] } else { ["user"] }
 }
@@ -82,6 +84,7 @@ pub impl @port.PermissionProvider for DocPerms with fn is_super_admin(
   _self,
   login_id,
   _device,
+  _extra,
 ) {
   login_id == "boss"
 }

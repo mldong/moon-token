@@ -16,11 +16,11 @@ pub(all) struct P {
   roles : Array[String]
 }
 
-pub impl @port.PermissionProvider for P with fn get_permissions(self, _login_id, _device) {
+pub impl @port.PermissionProvider for P with fn get_permissions(self, _login_id, _device, _extra) {
   self.permissions
 }
 
-pub impl @port.PermissionProvider for P with fn get_roles(self, _login_id, _device) {
+pub impl @port.PermissionProvider for P with fn get_roles(self, _login_id, _device, _extra) {
   self.roles
 }
 
@@ -28,6 +28,7 @@ pub impl @port.PermissionProvider for P with fn is_super_admin(
   _self,
   _login_id,
   _device,
+  _extra,
 ) {
   false
 }
@@ -110,6 +111,11 @@ async test "Shared：同设备复用同一枚，换设备另签" {
 被顶的 token **不是被删掉**，而是落成墓碑状态，保留期内（`kick_grace`，默认 5 分钟）再拿来用，
 读到的是 `SupersededByLogin`；过了保留期墓碑才被回收，那时读到的才是 `UnknownToken`。
 这条区分对前端很重要：前者该提示"你的账号在别处登录"，后者该直接跳登录页。
+
+三档策略都接受 `login(extra=...)`（会话级附加属性，用途见 [权限与角色](permissions.md) §7）：
+`Coexist` / `Supersede` 本来就是新签，属性随新会话带进去；`Shared` 命中复用时**token 不变但属性换成
+最近一次登录那一份**——与 mldong 各栈"每次登录重写整份 LoginUser"同语义（用例 A38 钉住）。
+换属性不会自动作废权限快照，要显式 `invalidate_grants`。
 
 ## `remember`：不是"多签一枚"，是换一档时效
 

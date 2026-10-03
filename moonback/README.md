@@ -35,6 +35,7 @@ pub impl @port.PermissionProvider for MbPerms with fn get_permissions(
   _self,
   login_id,
   _device,
+  _extra,
 ) {
   if login_id == "admin" { ["sys:user:save"] } else { [] }
 }
@@ -44,6 +45,7 @@ pub impl @port.PermissionProvider for MbPerms with fn get_roles(
   _self,
   _login_id,
   _device,
+  _extra,
 ) {
   ["user"]
 }
@@ -53,6 +55,7 @@ pub impl @port.PermissionProvider for MbPerms with fn is_super_admin(
   _self,
   _login_id,
   _device,
+  _extra,
 ) {
   false
 }

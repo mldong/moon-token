@@ -192,6 +192,10 @@ Redis 侧 `T:` 键的 TTL 必须设到 `expire_at + kick_grace`，否则墓碑�
 否则 v2 会被"帮我按 ip 查在线用户"这类需求逼出临时索引。
 推荐（不强制、不建列）的键名：`ip`、`ua`、`entry`。
 
+但"不可检索"不等于"不参与取数"：认证时 `T:` 上这张表会原样递给 `PermissionProvider` 的三个方法，
+业务可以按它决定给哪些权限（§8.13，用法见 [权限与角色](permissions.md) §7）。
+库仍然不解释键名、不建索引。
+
 ## 5. 不变量
 
 1. `status` 只能 Active → 墓碑单向迁移，墓碑不可复活。
@@ -389,6 +393,8 @@ SQL 侧**不需要**Redis 那个 `Z` 结构：`token_session` 本身就是全量
 | 8.10 | `Shared` 复用同一枚 token 时刷新 `lt` 并把成员移回队尾（新增 `FamilyPatch::RefreshLogin`） | 不刷新的话，一台天天复登的老设备在先进先出里永远排最前、会被上限先剔掉——与参照系语义相反 | **done**（A30 钉住；移动位置**不推**版本号） |
 | 8.11 | 新增第六类记录 `P:` 授权快照（`PermissionRecord`：`perms` / `roles` / `super_admin` / `built_at`，按 **token** 键）；`PermissionProvider` 加第三个方法 `is_super_admin`；应用层加 `authenticate` / `check_access` / `check_principal`（纯判定那半边，给 web 适配层用）/ `invalidate_grants`，并在注销／按账号登出／踢下线／顶下线／上限淘汰／封禁六条路径上联动作废 | §7.8 改判：一枚受保护请求打三次业务库是明显的错，而权限中间件必须能零往返地知道"是不是超管" | **done**（A31–A36；**实现方破坏性变更**：trait 多一法、`check_route` 少一参、`super_bypass` 从 `RoutePolicy` 挪进 `TokenConfig`） |
 | 8.12 | 交付第一个真后端 `mldong/moon-token-store-file`：内存为主 + 写穿透，一 key 一文件、写临时文件再 rename，`P:`/`T:`/`A:` 全套共用同一端口 | 探针实测：`NoSync` 0.5 ms/写、每次 fsync 36 ms/写（差 45 倍）；Windows 上键里的 `:` 会把落盘名截断 ⇒ 键不进文件名、改名要原子；冷启动扫 200 键 2 ms ⇒ 全量载入免费 | **done**（FS1–FS8；§6 验收清单第 12 条"只许一个时间源"就是这一轮加进去的） |
+
+| 8.13 | `PermissionProvider` 三个方法各加第四入参 `extra : Map[String, String]`（**非可选**：会话没带属性时是空表）；`login` 开 `extra?` 形参，`Shared` 复用同 token 时刷新这份属性，`rotate` 把它搬到新 token；聚合根补 `TokenSession::extras()` 交出一份副本 | 多业务线共用一套登录面时，取权限要用的 `appCode` 既不该编进 `login_id`（污染按身份检索的 API）也不该升成一等列（§4.4 不可检索）——端口拿得到会话属性就够了，库不必认识任何键名 | **done**（A37–A39；**实现方破坏性变更**：trait 三法各多一参） |
 
 **发版那一轮要一起做的三条"假绿窗口"——已随 0.1.1 闭掉**（0.1.1 上 mooncakes 之后，
 `docs-check.sh` 的 `moon add` 自动解析到新代次，旧形状当场变红，正是预期的行为）：

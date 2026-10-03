@@ -19,6 +19,7 @@ pub impl @port.PermissionProvider for DemoPerms with fn get_permissions(
   _self,
   login_id,
   _device,
+  _extra,
 ) {
   // 超管故意给空权限：他要靠 `is_super_admin` 那一档过，不是靠码表
   if login_id == "demo-user" { ["api:user:info", "sys:user:save"] } else { [] }
@@ -29,6 +30,7 @@ pub impl @port.PermissionProvider for DemoPerms with fn get_roles(
   _self,
   login_id,
   _device,
+  _extra,
 ) {
   if login_id == "boss" { ["admin"] } else { ["user"] }
 }
@@ -38,6 +40,7 @@ pub impl @port.PermissionProvider for DemoPerms with fn is_super_admin(
   _self,
   login_id,
   _device,
+  _extra,
 ) {
   login_id == "boss"
 }

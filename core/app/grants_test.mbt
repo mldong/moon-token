@@ -10,6 +10,7 @@ struct GrantProbe {
   mut perms : Array[String]
   mut roles : Array[String]
   mut super_admin : Bool
+  mut extras : Array[Map[String, String]]
 }
 
 ///|
@@ -18,6 +19,7 @@ let probe : GrantProbe = {
   perms: [],
   roles: [],
   super_admin: false,
+  extras: [],
 }
 
 ///|
@@ -28,8 +30,10 @@ pub impl @port.PermissionProvider for CountingPerms with fn get_permissions(
   _self,
   _login_id,
   _device,
+  extra,
 ) {
   probe.calls += 1
+  probe.extras.push(extra)
   probe.perms
 }
 
@@ -38,8 +42,10 @@ pub impl @port.PermissionProvider for CountingPerms with fn get_roles(
   _self,
   _login_id,
   _device,
+  extra,
 ) {
   probe.calls += 1
+  probe.extras.push(extra)
   probe.roles
 }
 
@@ -48,8 +54,10 @@ pub impl @port.PermissionProvider for CountingPerms with fn is_super_admin(
   _self,
   _login_id,
   _device,
+  extra,
 ) {
   probe.calls += 1
+  probe.extras.push(extra)
   probe.super_admin
 }
 
@@ -67,6 +75,7 @@ fn reset_probe(
   super_admin : Bool,
 ) -> Unit {
   probe.calls = 0
+  probe.extras = []
   probe.perms = perms
   probe.roles = roles
   probe.super_admin = super_admin
@@ -216,4 +225,85 @@ test "A36 快照线格式原样往返，坏串读成 miss 而不是崩" {
   assert_true(@port.PermissionRecord::decode("login=x|perms=") is None)
   assert_true(@port.PermissionRecord::decode("v=1|login=") is None)
   assert_true(@port.PermissionRecord::decode("不是记录") is None)
+}
+
+///|
+async test "A37 登录属性原样到供数方：三个方法都收到同一份，不传则是空表" {
+  @port.set_clock(Some(fn() { 9_400_000L }))
+  reset_probe(["user:info"], [], false)
+  let auth = grant_auth()
+  let t = auth.login(
+    "u1",
+    device="pc",
+    extra=Some(Map([("appCode", "shop"), ("terminal", "android")])),
+  ).token
+  // 登录本身一次业务都不问（A35 同义），属性只是躺在会话里等认证时被还原
+  assert_eq(probe.calls, 0)
+  auth.authenticate(t) |> ignore
+  assert_eq(probe.extras.length(), 3)
+  for m in probe.extras {
+    assert_eq(m.get("appCode"), Some("shop"))
+    assert_eq(m.get("terminal"), Some("android"))
+  }
+  // 不传 extra 才是常态：收到空表，而不是一个可选值让业务每个方法都判一遍
+  reset_probe([], [], false)
+  let plain = auth.login("u2", device="pc").token
+  auth.authenticate(plain) |> ignore
+  assert_eq(probe.extras.length(), 3)
+  for m in probe.extras {
+    assert_eq(m.length(), 0)
+  }
+  @port.set_clock(None)
+}
+
+///|
+async test "A38 Shared 复用会话：属性以最近一次登录为准，但旧快照不自动作废" {
+  @port.set_clock(Some(fn() { 9_500_000L }))
+  let cfg = @app.TokenConfig::default()
+  cfg.concurrent = @port.Shared
+  reset_probe(["user:info"], [], false)
+  let auth = grant_auth_with(cfg)
+  let first = auth.login("u1", device="pc", extra=Some(Map([("appCode", "shop")])))
+  auth.authenticate(first.token) |> ignore
+  assert_eq(probe.calls, 3)
+  // 同设备复登：token 不变，会话上的属性换成新的一份
+  let again = auth.login("u1", device="pc", extra=Some(Map([("appCode", "b2b")])))
+  assert_eq(again.token, first.token)
+  assert_true(again.reused)
+  // 快照按 token 键、不键入 extra：这是既有语义（A32 同款），换属性要显式作废
+  auth.authenticate(again.token) |> ignore
+  assert_eq(probe.calls, 3)
+  assert_eq(auth.invalidate_grants("u1"), 1)
+  probe.extras = []
+  auth.authenticate(again.token) |> ignore
+  assert_eq(probe.calls, 6)
+  assert_eq(probe.extras[0].get("appCode"), Some("b2b"))
+  // 复登时不带属性 ⇒ 会话上原来那份不动（不是"清空"）
+  probe.extras = []
+  assert_eq(auth.invalidate_grants("u1"), 1)
+  auth.login("u1", device="pc") |> ignore
+  auth.authenticate(again.token) |> ignore
+  assert_eq(probe.extras[0].get("appCode"), Some("b2b"))
+  @port.set_clock(None)
+}
+
+///|
+async test "A39 轮转把登录属性搬到新会话：换 token 不该换掉业务线" {
+  @port.set_clock(Some(fn() { 9_600_000L }))
+  reset_probe(["user:info"], [], false)
+  let auth = grant_auth()
+  let r = auth.login(
+    "u1",
+    device="pc",
+    extra=Some(Map([("appCode", "shop"), ("ip", "10.0.0.1")])),
+  )
+  probe.extras = []
+  let rotated = auth.rotate(r.refresh_token)
+  // 轮转本身不问业务，它只该把旧会话的属性搬到新会话上
+  assert_eq(probe.calls, 0)
+  auth.authenticate(rotated.token) |> ignore
+  assert_eq(probe.extras.length(), 3)
+  assert_eq(probe.extras[0].get("appCode"), Some("shop"))
+  assert_eq(probe.extras[0].get("ip"), Some("10.0.0.1"))
+  @port.set_clock(None)
 }

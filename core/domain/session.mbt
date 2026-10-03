@@ -91,6 +91,12 @@ pub fn TokenSession::extra_entries(
 }
 
 ///|
+/// 属性表的一份副本：交给应用层往供数端口原样带过去，不给它改到聚合根内部那张表。
+pub fn TokenSession::extras(self : TokenSession) -> Map[String, String] {
+  self.record.extra.copy()
+}
+
+///|
 pub fn TokenSession::set_extra(
   self : TokenSession,
   key : String,

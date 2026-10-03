@@ -30,6 +30,7 @@ pub impl @port.PermissionProvider for DemoPerms with fn get_permissions(
   self,
   _login_id,
   _device,
+  _extra,
 ) {
   self.permissions
 }
@@ -38,6 +39,7 @@ pub impl @port.PermissionProvider for DemoPerms with fn get_roles(
   self,
   _login_id,
   _device,
+  _extra,
 ) {
   self.roles
 }
@@ -46,6 +48,7 @@ pub impl @port.PermissionProvider for DemoPerms with fn is_super_admin(
   _self,
   _login_id,
   _device,
+  _extra,
 ) {
   false
 }
@@ -102,6 +105,11 @@ async fn do_login(auth : @app.TokenAuth[@mem.MemoryStore, DemoPerms]) -> @app.Lo
 `login_id` 是主键
 ，空串或纯空白会直接 `InvalidInput` 报错——**不会**拿空值当身份落库。
 `device` 省略时归一到 `default`（空串/带空格都算同一个设备，避免"同一个人"被拆成两个设备）。
+
+`login` 还有第三个可选入参 `extra?`：登录时带进来的会话级属性（`Map[String, String]`，
+常见键是 `appCode` / `ip` / `ua`）。库不认识任何键名，只在认证时把这张表原样递给权限供数端口，
+业务用它决定"这个人在这条业务线上有哪些权限"——用法与三条边界见 [权限与角色](permissions.md) §7。
+不带就是空表。
 
 ## 5. 鉴权：token 一律显式传参
 

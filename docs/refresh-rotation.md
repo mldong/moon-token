@@ -11,11 +11,11 @@ pub(all) struct P {
   roles : Array[String]
 }
 
-pub impl @port.PermissionProvider for P with fn get_permissions(self, _login_id, _device) {
+pub impl @port.PermissionProvider for P with fn get_permissions(self, _login_id, _device, _extra) {
   self.permissions
 }
 
-pub impl @port.PermissionProvider for P with fn get_roles(self, _login_id, _device) {
+pub impl @port.PermissionProvider for P with fn get_roles(self, _login_id, _device, _extra) {
   self.roles
 }
 
@@ -23,6 +23,7 @@ pub impl @port.PermissionProvider for P with fn is_super_admin(
   _self,
   _login_id,
   _device,
+  _extra,
 ) {
   false
 }
@@ -48,6 +49,9 @@ fn auth() -> @app.TokenAuth[@mem.MemoryStore, P] {
 2. 把**旧 access** 从反查族摘掉并删键（"整对换新"里的"废"就是这一处）。
 3. 签出全新的一整对，重新绑定。
 4. 落库之后 fire `Refreshed`。
+
+第 3 步签的新会话**搬用旧会话的 `extra`**（用例 A39）：轮转换的是凭证，不该把人换出原来那条业务线。
+旧 access 的会话已经读不到时（自然过期或已注销）就没得搬，新会话带空属性表。
 
 ```moonbit
 async fn rotate_shape() -> (Bool, String, String) raise {

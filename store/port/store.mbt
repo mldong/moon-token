@@ -171,10 +171,14 @@ pub fn parse_cursor(text : String) -> (Int64, String)? {
 /// 三个方法的返回都进 `P:` 授权快照、按会话缓存（见 `PermissionRecord`），**每会话至多问一次**——
 /// 所以这里可以放心查库；但也因此"业务改了角色权限"不会自动生效，得由 `invalidate_grants` 或
 /// 重新登录来推翻快照。
+///
+/// `extra` 是登录时随 `login(extra=...)` 写进会话的附加属性（appCode/ip/ua 这类供数要用、
+/// 又不该编进 login_id 的会话级属性——编 login_id 会污染按身份搜索的 API）。**没带属性时是空表，
+/// 不是"缺失"**，所以实现处不用判可选，直接按缺键走自己的缺省。
 pub(open) trait PermissionProvider {
-  async fn get_permissions(Self, String, Device?) -> Array[String] raise TokenError
-  async fn get_roles(Self, String, Device?) -> Array[String] raise TokenError
+  async fn get_permissions(Self, String, Device?, Map[String, String]) -> Array[String] raise TokenError
+  async fn get_roles(Self, String, Device?, Map[String, String]) -> Array[String] raise TokenError
   /// 超级管理员判定：业务侧的事实（常见形状是用户表上有一个管理员类型字段）。
   /// 库只把这个布尔原样存进快照，并在权限/角色校验前问一次——"谁是超管"没有通用推导规则。
-  async fn is_super_admin(Self, String, Device?) -> Bool raise TokenError
+  async fn is_super_admin(Self, String, Device?, Map[String, String]) -> Bool raise TokenError
 }

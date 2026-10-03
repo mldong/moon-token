@@ -17,6 +17,7 @@ pub impl @port.PermissionProvider for Perms with fn get_permissions(
   self,
   login_id,
   _device,
+  _extra,
 ) {
   match self.by_user.get(login_id) {
     None => []
@@ -24,7 +25,7 @@ pub impl @port.PermissionProvider for Perms with fn get_permissions(
   }
 }
 
-pub impl @port.PermissionProvider for Perms with fn get_roles(self, login_id, _device) {
+pub impl @port.PermissionProvider for Perms with fn get_roles(self, login_id, _device, _extra) {
   match self.roles_by_user.get(login_id) {
     None => []
     Some(v) => v
@@ -35,6 +36,7 @@ pub impl @port.PermissionProvider for Perms with fn is_super_admin(
   _self,
   _login_id,
   _device,
+  _extra,
 ) {
   false
 }
@@ -73,6 +75,8 @@ fn auth() -> @app.TokenAuth[@mem.MemoryStore, Perms] {
 第三个方法 `is_super_admin` 库里不给任何推导：**"谁是超管"是业务事实**（常见形状是用户表上有一个
 管理员类型字段）。演示实现一律写死 `false`，真实实现返回你自己那个判据的结果。
 库只把这个布尔原样存进快照，并在权限/角色校验前读它。
+
+三个方法都收第四个入参 `extra`——会话上的自由属性表，来自 `login(extra=...)`，见 §7。
 
 ## 2. 授权快照：一枚会话只问业务一次
 
@@ -232,8 +236,9 @@ async test "未登录时抛的是鉴权错，不是返回 false" {
 
 ## 6. `device` 参数：按设备给不同数
 
-供数端口拿得到 `(login_id, device?)`。同一个人从 App 和从后台进来，权限集可以不同——
-这件事在库里不需要任何特判，业务在 `get_permissions` 里按 device 分支即可。
+供数端口拿得到 `(login_id, device?, extra)`。同一个人从 App 和从后台进来，权限集可以不同——
+这件事在库里不需要任何特判，业务在 `get_permissions` 里按 device 分支即可（§7 的 `extra` 是同一件事
+的另一个维度：device 是"从哪个端来"，extra 是"登录时带进来的那几句附带话"）。
 
 ```moonbit
 pub(all) struct DeviceAware {
@@ -245,6 +250,7 @@ pub impl @port.PermissionProvider for DeviceAware with fn get_permissions(
   self,
   _login_id,
   device,
+  _extra,
 ) {
   match device {
     None => self.web_perms
@@ -256,6 +262,7 @@ pub impl @port.PermissionProvider for DeviceAware with fn get_roles(
   _self,
   _login_id,
   _device,
+  _extra,
 ) {
   []
 }
@@ -264,6 +271,7 @@ pub impl @port.PermissionProvider for DeviceAware with fn is_super_admin(
   _self,
   _login_id,
   _device,
+  _extra,
 ) {
   false
 }
@@ -298,13 +306,102 @@ async test "同一个人按设备拿到不同权限集" {
 }
 ```
 
-## 7. 角色与权限是两套数，不要混用
+## 7. `extra` 参数：把会话属性带进取数口径
+
+第四个入参是会话上的自由属性表（`Map[String, String]`），来自 `login(extra=...)`。
+它存在的理由只有一条：**有些数业务取权限时要用，但既不该编进 `login_id`**（编进去就污染了
+按身份检索那套 API），**也不该升成一等列**（见 [数据模型](data-model.md) §4.4，`extra` 明确不可检索）。
+典型形状是多业务线共用一套登录面：`appCode` 决定这个人在这条线上有哪些权限。
+
+库里没有 `appCode` 这个概念，也不做任何解释——它只把会话上那张表**原样**递给三个方法。
+
+```moonbit
+pub(all) struct LinePerms {
+  by_line : Map[String, Array[String]]
+}
+
+pub impl @port.PermissionProvider for LinePerms with fn get_permissions(
+  self,
+  _login_id,
+  _device,
+  extra,
+) {
+  // 按需取键，缺键走自己的缺省；库不替项目规定键名
+  let line = match extra.get("appCode") {
+    None => "default"
+    Some(v) => v
+  }
+  match self.by_line.get(line) {
+    None => []
+    Some(v) => v
+  }
+}
+
+pub impl @port.PermissionProvider for LinePerms with fn get_roles(
+  _self,
+  _login_id,
+  _device,
+  _extra,
+) {
+  []
+}
+
+pub impl @port.PermissionProvider for LinePerms with fn is_super_admin(
+  _self,
+  _login_id,
+  _device,
+  _extra,
+) {
+  false
+}
+
+pub extend LinePerms with @port.PermissionProvider::{
+  get_permissions,
+  get_roles,
+  is_super_admin,
+}
+
+async fn line_perms(app_code : String) -> Array[String] raise {
+  let p : LinePerms = {
+    by_line: Map::from_array([("shop", ["order:read"]), ("default", [])]),
+  }
+  let a = @app.TokenAuth::new(
+    "user",
+    @app.TokenConfig::default(),
+    @mem.MemoryStore::new("user"),
+    p,
+    @style.opaque_style(),
+  )
+  let t = a.login("demo", device="pc", extra=Some(Map([("appCode", app_code)]))).token
+  let (_, record) = a.authenticate(t)
+  record.perms
+}
+
+async test "登录属性决定取数口径" {
+  assert_eq(line_perms("shop"), ["order:read"])
+  // 认不出的业务线落到 default 那一档，而演示实现给 default 的是空集
+  assert_eq(line_perms("b2b"), [])
+}
+```
+
+四条边界，都是 §2 那三条在本参数上的具体化：
+
+- **不带属性时收到的是空表，不是一个可选值**。`login` 没传 `extra` 就是这个默认，
+  所以实现处不用判"有没有这个参数"，只判"有没有这个键"。
+- **`extra` 变化不会自动作废快照**。快照按 token 键、不键入 `extra`：`Shared` 策略下同设备复登
+  会刷新会话上的属性，但下一次取数仍命中旧快照。换业务线要显式 `invalidate_grants`（或换设备重登）。
+  用例 A38 钉住这条。
+- **轮转会把它搬到新 token**（A39）：换的是凭证，不是业务线。
+- **它在 `T:` 记录里，不在 `P:` 快照里**。属性属于会话，权限集属于快照，两者同寿但不同键，
+  作废其中一个不动另一个。
+
+## 8. 角色与权限是两套数，不要混用
 
 `get_roles` 与 `get_permissions` 各查各的，`has_role` 只吃前者。把它们塞进同一个数组里
 "用前缀区分"是能跑的，但错误载荷 `NotRole(user)` 与 `NotPermission(user)` 就分不开了——
 运维查问题时这条区分很值钱。
 
-## 8. 在守卫里追加权限断言
+## 9. 在守卫里追加权限断言
 
 `RouteGuard::check` 收的是同步闭包，而 `check_permission` 是 async，所以**追加断言写在处理器里**、
 守卫只管身份；或者反过来，把身份交给守卫、把权限在处理器里判一次。示例服务走的是后者

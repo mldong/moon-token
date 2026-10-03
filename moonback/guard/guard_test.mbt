@@ -31,6 +31,7 @@ pub impl @port.PermissionProvider for CountingPerms with fn get_permissions(
   _self,
   _login_id,
   _device,
+  _extra,
 ) {
   probe.calls += 1
   probe.perms
@@ -41,6 +42,7 @@ pub impl @port.PermissionProvider for CountingPerms with fn get_roles(
   _self,
   _login_id,
   _device,
+  _extra,
 ) {
   probe.calls += 1
   probe.roles
@@ -51,6 +53,7 @@ pub impl @port.PermissionProvider for CountingPerms with fn is_super_admin(
   _self,
   _login_id,
   _device,
+  _extra,
 ) {
   probe.calls += 1
   probe.super_admin
