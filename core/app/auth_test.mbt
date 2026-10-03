@@ -1,5 +1,6 @@
 ///|
-/// A 系列（A1–A20）：打在**应用层用例**上——async + 内存适配器 + 注入时钟。
+/// A 系列（A1–A30、A40–A42）：打在**应用层用例**上——async + 内存适配器 + 注入时钟。
+/// A31–A39 在同目录 `grants_test.mbt`（授权快照与供数端口那一组），编号接续不重号。
 /// 黑盒测试档（`*_test.mbt`）：只有它才吃 moon.pkg 里 `for "test"` 的 import
 /// （白盒档的生成驱动找不到 `moonbitlang/async`，实测 `Error [4020]`），
 /// 所以包内符号一律显式 `@app.` 限定，免 `test_unqualified_package` 警告。
@@ -636,4 +637,68 @@ async test "A30 Shared 复用同 token 会刷新登录序：上限剔的是久�
   assert_eq(access_code(auth, mid.token), @port.UnknownToken.code())
   assert_eq(access_code(auth, again.token), -1)
   assert_eq(access_code(auth, third.token), -1)
+}
+
+///|
+async test "A40 滑动续期把族 A: 一起续上：反向操作够得着还在用的会话" {
+  let auth = standard()
+  let issued = auth.login("u1", device="pc")
+  advance(auth.config.renew_min_interval_ms() + 1L)
+  auth.check_login(issued.token) |> ignore
+  // 推到"原始到期点之后 30 秒"：会话自己被续到了 签发+61s+6h，仍然活着；
+  // 而族键的 TTL 是成员 e 的最大值，续期若不把它一起搬，反查索引此刻已经读不到这枚会话
+  advance(issued.expire_at - now_ms() + 30_000L)
+  assert_true(auth.is_login(issued.token))
+  // 反向操作走的是 A:：索引没跟着续就只能读到"这个账号没有会话"，踢人静默成功 0 枚
+  assert_eq(auth.kickout("u1"), 1)
+  assert_eq(access_code(auth, issued.token), @port.KickedOut.code())
+}
+
+///|
+async test "A41 IdleMark 档：常访问的会话不因活跃时效被熬死，真闲置才判 ActiveTimeout" {
+  let cfg = @app.TokenConfig::default()
+  cfg.renewal = @port.IdleMark
+  cfg.active_timeout = @port.Duration::from_minutes(30L)
+  cfg.timeout = @port.Duration::from_hours(6L)
+  let auth = new_auth("idle", cfg, [], [])
+  let t = auth.login("u1", device="pc").token
+  advance(20L * 60_000L)
+  assert_eq(access_code(auth, t), -1)
+  advance(20L * 60_000L)
+  // 两次访问各隔 20 分钟，谁都没闲置满 30 分钟 ⇒ 会话必须还活着。
+  // 该档若从不把 last_active 写回，这里就退化成"自签发起 30 分钟"的固定死线
+  assert_eq(access_code(auth, t), -1)
+  // 负向：真闲置满 30 分钟，仍要精确报活跃过期，不能因为"一直有人来"就不判
+  advance(31L * 60_000L)
+  assert_eq(access_code(auth, t), @port.ActiveTimeout.code())
+}
+
+///|
+async test "A42 反查索引落后于会话时，续期把它补回来（T: 权威、A: 可自愈）" {
+  let cfg = @app.TokenConfig::default()
+  cfg.renew_min_interval = @port.Duration::from_secs(1L)
+  let store = @mem.MemoryStore::new("selfheal")
+  @port.set_clock(Some(fn() { now_ms() }))
+  let p : FixedPerms = { permissions: [], roles: [] }
+  let auth = @app.TokenAuth::new(
+    "selfheal",
+    cfg,
+    store,
+    p,
+    @style.opaque_style(),
+  )
+  let r = auth.login("u1", device="pc")
+  advance(2_000L)
+  auth.check_login(r.token) |> ignore
+  assert_eq(auth.kickout("u1"), 1)
+  // 模拟"索引掉了但会话还在"：后端被清过、或 Redis 侧那条反查落后于事实
+  advance(2_000L)
+  let alive = auth.login("u2", device="pc")
+  store.del([@port.KeySpace::of("selfheal").family("u2")])
+  assert_eq(auth.kickout("u2"), 0)
+  // 下一次真续期必须把自己补回族里：反向操作不该因为索引缺了一行就永久够不着这枚会话
+  advance(2_000L)
+  auth.check_login(alive.token) |> ignore
+  assert_eq(auth.kickout("u2"), 1)
+  assert_eq(access_code(auth, alive.token), @port.KickedOut.code())
 }

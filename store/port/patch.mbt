@@ -18,8 +18,13 @@ pub(all) enum FamilyPatch {
   /// 存在理由：`max_sessions` 选 Kick/Supersede 档时，被剔的那枚要留墓碑让对端读到精确原因，
   /// 但它已经不算"这个账号还活着的会话"——成员不摘掉，上限就会把保留窗内的墓碑数进去。
   ForgetTokens(String, Array[String])
-  /// 续期：tokens, 新的到期时刻
-  TouchExpire(Array[String], Int64)
+  /// 续期：login_id, device, token, 新的到期时刻, 该会话的登录时刻。
+  /// 把一枚会话的到期点前推，**同时把反查族里该成员的 `e` 搬到同一点**（成员不在族里就补上），
+  /// 于是族键的 TTL（= 成员 `e` 的最大值）跟着走。
+  /// 存在理由：族键不跟着搬的话，一枚长期活跃的会话会把自己的反查索引熬过期——
+  /// `kickout` / `logout_by_id` / `supersede` / `invalidate_grants` 都先读族，读不到就静默 0 枚，
+  /// 而被踢方下次请求照样通过（A40 钉住）。成员已存在时**不推版本号**（集合没变，不变量 3）。
+  TouchExpire(String, Device, String, Int64, Int64)
   /// 附加数据直写（`S:`/`D:`/`R:`）：key, payload, expire_at（<=0 表示不过期）
   PutRecord(String, String, Int64)
   /// 删任意键

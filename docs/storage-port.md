@@ -174,7 +174,7 @@ async test "登录写三处；窗内再读一次不多写" {
 | `RemoveTokens` | login_id, tokens | 摘成员 + 删 `T:` 键 |
 | `ForgetTokens` | login_id, tokens | **只摘成员、留 `T:` 墓碑**：上限的 Kick/Supersede 档靠它 |
 | `RefreshLogin` | login_id, token, login_time | 复用同 token 重新登录：移回队尾＋刷 `lt`，**不推版本号**（成员集合没变） |
-| `TouchExpire` | tokens, expire_at | 续期：只前推到期点 |
+| `TouchExpire` | login_id, device, token, expire_at, login_time | 续期：前推 `T:` 的到期点，**并把族里该成员的 `e` 搬到同一点**（成员不在族里就补上）⇒ 族键 TTL 跟着走。只搬 `T:` 的话，长期活跃的会话会把自己的反查索引熬过期，踢人／按账号登出／作废授权会静默 0 枚 |
 | `PutRecord` | key, payload, expire_at | 附加数据直写（`S:` / `D:` / `R:` / `P:`） |
 | `RemoveKeys` | keys | 删任意键 |
 

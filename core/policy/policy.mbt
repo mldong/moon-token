@@ -91,6 +91,8 @@ pub(all) enum RenewalDecision {
   Skip
   /// 续到新的绝对到期时刻
   Renew(Int64)
+  /// IdleMark 档：到期点不动，只把这枚会话的活跃时刻标到新时刻
+  Mark(Int64)
   /// IdleMark 模式下活跃超时
   IdleExpired
 }
@@ -147,14 +149,23 @@ pub fn decide_renewal(input : RenewalInput) -> RenewalDecision {
         }
       }
     }
-    @port.IdleMark =>
+    @port.IdleMark => {
+      let since = input.now - input.last_active
       if input.active_timeout_ms <= 0L {
+        // 没配活跃时效 ⇒ 这一档无事可做
         Skip
-      } else if input.now - input.last_active >= input.active_timeout_ms {
+      } else if since >= input.active_timeout_ms {
+        // 判死排在写回之前：不能因为"来人了"就把已经闲置过头的会话救活
         IdleExpired
-      } else {
+      } else if input.min_interval_ms > 0L && since < input.min_interval_ms {
+        // 节流窗内不写后端（与 SlideOnAccess 同一把尺子）
         Skip
+      } else {
+        // 出窗就把活跃时刻标上。**不写回的话 `active_timeout` 就不是"最低活跃频率"，
+        // 而退化成"自签发起的固定死线"**——天天在用的会话照样在到点时被判闲置（A41 钉住）
+        Mark(input.now)
       }
+    }
   }
 }
 

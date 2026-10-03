@@ -396,6 +396,9 @@ SQL 侧**不需要**Redis 那个 `Z` 结构：`token_session` 本身就是全量
 
 | 8.13 | `PermissionProvider` 三个方法各加第四入参 `extra : Map[String, String]`（**非可选**：会话没带属性时是空表）；`login` 开 `extra?` 形参，`Shared` 复用同 token 时刷新这份属性，`rotate` 把它搬到新 token；聚合根补 `TokenSession::extras()` 交出一份副本 | 多业务线共用一套登录面时，取权限要用的 `appCode` 既不该编进 `login_id`（污染按身份检索的 API）也不该升成一等列（§4.4 不可检索）——端口拿得到会话属性就够了，库不必认识任何键名 | **done**（A37–A39；**实现方破坏性变更**：trait 三法各多一参） |
 
+| 8.14 | `TouchExpire` 补上 `login_id` / `device` / `login_time` 三个参数，语义从"只前推 `T:` 的到期点"改成**"`T:` 与族里该成员的 `e` 一起搬到同一点"**（成员不在族里则补上，补成员算"增"、推版本号） | 族键 TTL 取的是成员 `e` 的最大值。滑动续期只搬 `T:`，一枚天天在用的会话会把自己的反查索引熬过期：`kickout` / `logout_by_id` / `supersede` / `invalidate_grants` 都先读族，读不到就静默 0 枚，而本人下次请求照样过——反向操作整个失效，且没有任何报错 | **done**（A40 正例 + A42 自愈例；**后端破坏性变更**：`FamilyPatch::TouchExpire` 换形状） |
+| 8.15 | `IdleMark` 档出节流窗后发 `RenewalDecision::Mark(now)`，应用层据此写回 `last_active`（到期点不动，所以不牵族键）；判死排在写回之前 | 该档原先从不写回 `last_active`，于是 `active_timeout` 不是"最低活跃频率"而是"自签发起的固定死线"——一直在用的会话照样到点被判 `ActiveTimeout`，与这个配置项的名字和 mldong 各栈的闲置掉线语义都不符 | **done**（D6 三档 + A41；`renew_min_interval` 从"只管滑动续期"变成"两档共用同一把尺子"） |
+
 **发版那一轮要一起做的三条"假绿窗口"——已随 0.1.1 闭掉**（0.1.1 上 mooncakes 之后，
 `docs-check.sh` 的 `moon add` 自动解析到新代次，旧形状当场变红，正是预期的行为）：
 

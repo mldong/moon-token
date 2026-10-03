@@ -106,7 +106,8 @@ assert_eq(r, "KickedOut")
 
 - **恒真的夹具**：两条节点的线性流程，任何实现都能"跑通"，因为它没测任何分支。
 - **恒 skip 的套件**：环境不齐时整批跳过还报绿——`moon test` 的退出码 0 不等于"跑过了"。
-  本仓的门禁因此断言 `Total tests: 33` 这个**条数**，而不是只看退出码。
+  本仓的门禁因此断言 `Total tests` 的**条数**（`scripts/gate.sh` 与 CI 各钉一枚当前值，
+  增删用例要同步改），而不是只看退出码。
 - **wasm-gc 档静默丢用例**：`async test` 在 wasm-gc 下会被整片丢弃且仍报 passed。
   所以口径钉在 `preferred_target = "wasm"`，native 交给 CI。
 

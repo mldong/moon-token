@@ -276,6 +276,49 @@ pub fn FamilyRecord::refresh_login(
 }
 
 ///|
+/// 续期落到反查族：把该成员的 `e` 搬到新的到期点，族键 TTL（= `max_expire()`）随之重算。
+/// 成员**不在**族里就按传入形状补上——`T:` 才是权威，`A:` 是派生索引，索引落后于事实时
+/// 自愈比"读不到就算这枚会话不存在"诚实：否则反向操作会把还在用的会话当成没登录。
+/// 返回是否真的改动了（没改动就不用重写整条族）。已存在时只换 `e`，`dev`/`lt` 不动，
+/// 也不推版本号（成员集合没变，不变量 3）；补成员算"增"，推版本号。
+pub fn FamilyRecord::touch_expire(
+  self : FamilyRecord,
+  device : Device,
+  token : String,
+  expire_at : Int64,
+  login_time : Int64,
+) -> Bool {
+  let mut changed = false
+  let mut hit = false
+  let kept : Array[FamilyMember] = []
+  for m in self.members {
+    if m.token == token && !hit {
+      hit = true
+      if m.expire_at != expire_at {
+        changed = true
+        kept.push(FamilyMember::make(m.device, m.token, expire_at, m.login_time))
+      } else {
+        kept.push(m)
+      }
+    } else {
+      kept.push(m)
+    }
+  }
+  if hit {
+    if changed {
+      self.members = kept
+    }
+  } else {
+    self.members.push(
+      FamilyMember::make(device, token, expire_at, login_time),
+    )
+    self.version += 1L
+    changed = true
+  }
+  changed
+}
+
+///|
 pub fn FamilyRecord::max_expire(self : FamilyRecord) -> Int64 {
   let mut best = 0L
   for m in self.members {

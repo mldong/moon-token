@@ -162,7 +162,8 @@ async test "反查族支撑在线列表与踢人" {
 
 - `SlideOnAccess`（默认）：每次访问把到期点往前推，但受 `renew_min_interval`（默认 60s）节流——
   窗内不写库。没有这层节流，"滑动续期"就等于每个请求一次写库。
-- `IdleMark`：只记最后活跃时刻，闲置过 `active_timeout` 即拒，**不看签发时效**。
+- `IdleMark`：到期点不动，只把"最后一次访问"写回会话（同样受 `renew_min_interval` 节流），
+  闲置过 `active_timeout` 即拒，**不看签发时效**。判死排在写回之前——"有人来了"救不活已经闲置过头的会话。
 
 ```moonbit
 async fn two_clocks() -> String raise {

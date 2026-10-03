@@ -156,7 +156,7 @@ async test "FS8 与内存版逐项同判据" {
     @port.AddToken("u1", @port.Device::of("pc"), "t1", FAR, 1_000_000L),
     @port.AddToken("u1", @port.Device::of("app"), "t2", FAR, 1_100_000L),
     @port.MarkStatus(["t1"], @port.Kicked, SWEEP_NOW),
-    @port.TouchExpire(["t2"], FAR),
+    @port.TouchExpire("u1", @port.Device::of("app"), "t2", FAR, 1_100_000L),
     @port.RemoveTokens("u1", ["t2"]),
     @port.RemoveKeys(["user:S:u1"]),
   ]

@@ -304,8 +304,28 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::check_login(
         session.payload(),
         self.config.key_expire_at(target),
       )
+      // 族键的 TTL 是成员 e 的最大值：只搬 `T:` 的话，长期活跃的会话会把自己的反查索引熬过期，
+      // 之后 kickout/logout_by_id/supersede/invalidate_grants 读族读不到，静默 0 枚而本人照样能过
+      self.store.apply(
+        @port.TouchExpire(
+          session.login_id(),
+          session.device(),
+          token,
+          target,
+          session.login_time(),
+        ),
+      )
     }
     @policy.IdleExpired => raise @port.NotLogin(@port.ActiveTimeout)
+    @policy.Mark(at) => {
+      // 只标活跃、不搬到期点：族键 TTL 取的是成员 e，e 没动 ⇒ 反查索引不用跟着改
+      session.touch(at)
+      self.store.set(
+        self.keys.token(token),
+        session.payload(),
+        self.config.key_expire_at(session.expire_at()),
+      )
+    }
   }
   session.login_id()
 }

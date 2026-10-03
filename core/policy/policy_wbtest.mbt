@@ -88,6 +88,7 @@ test "D4 decide_renewal SlideOnAccess 节流窗内不写后端" {
     Skip => assert_true(true)
     Renew(x) => fail("窗内不该续期，实得 " + x.to_string())
     IdleExpired => fail("模式不是 IdleMark")
+    Mark(x) => fail("SlideOnAccess 不用 Mark，实得 " + x.to_string())
   }
 }
 
@@ -106,6 +107,7 @@ test "D5 decide_renewal SlideOnAccess 出窗续到新到期点，且不往回拽
     Renew(target) => assert_eq(target, 110_000L)
     Skip => fail("出窗应续期")
     IdleExpired => fail("模式不是 IdleMark")
+    Mark(x) => fail("SlideOnAccess 不用 Mark，实得 " + x.to_string())
   }
   // 记住我档（到期点已在更远的未来）不能被普通续期缩短
   let ahead = RenewalInput::make(
@@ -121,11 +123,13 @@ test "D5 decide_renewal SlideOnAccess 出窗续到新到期点，且不往回拽
     Skip => assert_true(true)
     Renew(t) => fail("不该缩短有效期，实得 " + t.to_string())
     IdleExpired => fail("模式不是 IdleMark")
+    Mark(x) => fail("SlideOnAccess 不用 Mark，实得 " + x.to_string())
   }
 }
 
 ///|
-test "D6 decide_renewal IdleMark 闲置过活跃时效判过期，窗内放行" {
+test "D6 decide_renewal IdleMark 三档：判死、标活跃、窗内不写回" {
+  // 判死排在写回之前：闲置已经过头，"有人来了"不救活
   match
     decide_renewal(
       RenewalInput::make(
@@ -141,6 +145,8 @@ test "D6 decide_renewal IdleMark 闲置过活跃时效判过期，窗内放行" 
     IdleExpired => assert_true(true)
     _ => fail("闲置超阈值应判 IdleExpired")
   }
+  // 没闲置过头 ⇒ 把活跃时刻标上。旧期望是 Skip，而那正是缺陷本体：
+  // 从不写回 last_active，`active_timeout` 就成了"自签发起的固定死线"，天天用的会话照样被判闲置
   match
     decide_renewal(
       RenewalInput::make(
@@ -153,8 +159,28 @@ test "D6 decide_renewal IdleMark 闲置过活跃时效判过期，窗内放行" 
         13_000L,
       ),
     ) {
+    Mark(at) => assert_eq(at, 13_000L)
+    Skip => fail("出窗该标活跃，却拿了 Skip（就是 A41 那条缺陷）")
+    Renew(x) => fail("IdleMark 不搬到期点，实得 Renew " + x.to_string())
+    IdleExpired => fail("只隔了 3 秒，不该判闲置")
+  }
+  // 节流窗内不写后端（与 SlideOnAccess 同一把尺子）
+  match
+    decide_renewal(
+      RenewalInput::make(
+        @port.IdleMark,
+        0L,
+        10_000L,
+        60_000L,
+        30_000L,
+        20_000L,
+        13_000L,
+      ),
+    ) {
     Skip => assert_true(true)
-    _ => fail("IdleMark 窗内不该改动会话")
+    Mark(x) => fail("窗内不该写回，实得 Mark " + x.to_string())
+    Renew(x) => fail("IdleMark 不搬到期点，实得 Renew " + x.to_string())
+    IdleExpired => fail("窗内更不该判闲置")
   }
 }
 

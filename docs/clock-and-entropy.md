@@ -37,7 +37,7 @@ test "不注入时读真实时钟，注入后读我们给的" {
 | 签发时效 `timeout` | `now > expire_at` | 真等 6 小时 |
 | 活跃时效 `active_timeout` | `now - last_active > 阈值` | 真等 5 分钟起 |
 | 踢人保留宽窗 `kick_grace` | 墓碑过了 `deadline` 才回收 | 真等 5 分钟，且窗内外两种原因要各等一次 |
-| 续期节流 `renew_min_interval` | 出窗才前推到期点 | 真等 60 秒，且"窗内不写库"测不准 |
+| 续期节流 `renew_min_interval` | 出窗才写回：`SlideOnAccess` 前推到期点、`IdleMark` 标活跃时刻 | 真等 60 秒，且"窗内不写库"测不准 |
 | refresh 到期 | `R:` 键 TTL | 真等 30 天 |
 
 所以时钟槽不是"方便测试的小机关"，是这些用例**能被测出来、也能被演出来**的前提。

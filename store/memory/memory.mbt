@@ -211,10 +211,15 @@ pub fn MemoryStore::apply_patch(
         self.save_family(login_id, fam)
       }
     }
-    @port.TouchExpire(tokens, expire_at) =>
-      for token in tokens {
-        self.revise_token(token, None, expire_at)
+    @port.TouchExpire(login_id, device, token, expire_at, login_time) => {
+      self.revise_token(token, None, expire_at)
+      let fam = self.load_family(login_id)
+      // 族里该成员的 e 必须搬到同一点：族键 TTL 取的就是成员 e 的最大值，
+      // 不搬就会让还在用的会话先丢掉反查索引（A40）
+      if fam.touch_expire(device, token, expire_at, login_time) {
+        self.save_family(login_id, fam)
       }
+    }
     @port.PutRecord(key, payload, expire_at) =>
       self.put(key, payload, expire_at)
     @port.RemoveKeys(keys) => self.remove(keys)
