@@ -1,6 +1,6 @@
 name = "mldong/moon-token-store-file"
 
-version = "0.1.8"
+version = "0.1.9"
 
 license = "Apache-2.0"
 
@@ -13,6 +13,6 @@ repository = "https://github.com/mldong/moon-token"
 description = "File-backed TokenStore for moon-token: in-memory authority with write-through to a directory, so a restart keeps sessions without Redis or MySQL"
 
 import {
-  "mldong/moon-token-store@0.1.8",
+  "mldong/moon-token-store@0.1.9",
   "moonbitlang/async@0.22.4",
 }
