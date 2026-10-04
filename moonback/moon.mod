@@ -10,7 +10,7 @@ readme = "README.md"
 
 repository = "https://github.com/mldong/moon-token"
 
-description = "moonback adapter for moon-token: per-route auth middleware, request principal in userdata, and route-policy wiring for the moonback web framework"
+description = "moonback adapter for moon-token: per-route authentication middleware, request principal in context, route permission policy wiring, and HTTP status (or envelope) mapping for failures"
 
 import {
   "mldong/moon-token@0.1.9",
@@ -18,3 +18,19 @@ import {
   "moonbitlang/async@0.22.4",
   "moonbitlang/moonback@0.8.6",
 }
+keywords = [
+  "moonback",
+  "middleware",
+  "auth",
+  "authentication",
+  "guard",
+  "route",
+  "session",
+  "cookie",
+  "bearer",
+  "http",
+  "moonbit",
+  "路由守卫",
+  "鉴权",
+  "中间件",
+]
