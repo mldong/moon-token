@@ -66,11 +66,18 @@ pub(open) trait TokenStore {
 
 ```text
 {realm}:T:{token}        会话记录        线格式 v=1：k=v|k=v，键与值都转义
-{realm}:A:{login_id}     反查族          成员各自是编码后的记录，';' 连接，带 version
+{realm}:A:{login_id}     反查族          成员 (dev, token, e, lt) 各自是编码后的记录，';' 连接，带 version
 {realm}:R:{refresh}      refresh 绑定    login_id + device + 绑定的 access
 {realm}:S:{login_id}     账号会话        跨该账号所有 token 共享的属性表
 {realm}:D:{login_id}     封禁            until + reason
+{realm}:P:{token}        授权快照        perms + roles + 超管位 + built_at（派生缓存）
+{realm}:Z                活会话索引      无载荷的派生索引；内存版不真建这条键
 ```
+`P:` 与 `Z` 都是**派生**的：权威永远在 `T:`，它们缺失或损坏只能导致"多问一次业务"或"少枚举几条"，
+**不许参与放行与拦截的裁决**。`P:` 走的就是通用 `set` / `get` / `del`，端口没为它加新方法，
+但三条要守住：TTL 用 `key_expire_at(expire_at)` 按**建快照那一刻**的到期点算（滑动续期不搬它）、
+会话终结时库会调 `del` 一起作废、解不出来一律当 miss。`e` 是成员自己的到期时刻，
+族键 TTL 取的是它的最大值——续期补丁 `TouchExpire` 会把 `T:` 与 `e` 一起搬到同一点。
 
 线格式由本包持有（`port/codec.mbt`），核心与适配器共用同一份编解码，所以不会出现"两实现各自发明字段名"。
 **加字段安全**（解码按键取），**改字段名不安全**（旧数据解不开）——字段名一旦进过发布版本就是契约。

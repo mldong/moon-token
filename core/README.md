@@ -20,7 +20,7 @@ moon add moonbitlang/async      # async 运行时；库本身不依赖它，但�
 | 双向映射 | `token → login_id` 正查 + `login_id → token 族` 反查；踢人/顶人/在线列表全靠反查 |
 | 精确反馈 | 被踢 / 被顶 / 过期 / 闲置超时 / 无 token / 伪造 / refresh 重放——**七种原因各报各的**，绝不塌成"未登录" |
 | 并发三态 | `Coexist`（默认共存）/ `Supersede`（顶人下线）/ `Shared`（同设备共用一枚） |
-| 双层时效 | 签发时效 `timeout` + 活跃时效 `active_timeout`；"记住我"是长时效档 |
+| 双层时效 | 签发时效 `timeout` + 活跃时效 `active_timeout`（**只在 `renewal = IdleMark` 档判**，默认 `SlideOnAccess` 不看它）；"记住我"是长时效档 |
 | 全量轮转 | `rotate` 换新整对，旧 access 与旧 refresh 同时失效；**不校验绑定 access 是否存活**（那是必现缺陷的来源） |
 | 滑动续期 | `SlideOnAccess`（带 60s 节流窗）/ `IdleMark`（活跃标记） |
 | 多账号体系 | `realm` 维度实例化，键位前缀隔离 |
@@ -122,11 +122,15 @@ async test "被踢方拿到的是 KickedOut，不是笼统未登录" {
 
 ## 边界（v1）
 
-- **只交付内存存储**。进程重启状态清零；持久化后端（事务型、Lua 原子型）在下一轮。
+- **本模块只带内存适配器**：进程重启状态清零。持久化在同家族的 `mldong/moon-token-store-file`
+  （内存为主 + 写穿透，零 Redis、零 MySQL），框架适配在同家族的 `mldong/moon-token-moonback`；
+  Redis / SQL 是同一个端口上**预留的口子**，等第三方驱动库稳定再实现——业务代码与端口都不动。
 - **熵源分档**：默认 `opaque_style()` 取平台熵，取不到即 `abort`，绝不静默回落到固定种子。
   `wasm-gc` 档无平台熵源，请改用 `opaque_style_with_seed` / `opaque_style_with`。
 - 随机流是 core 提供的 **ChaCha8（8 轮变体）**，本项目不宣称其等同 ChaCha20 强度。
-- 不做注解式鉴权（语言无注解）；不做 JWT；二级认证与框架中间件适配归下一轮。
+- 不做注解式鉴权（语言无注解，这是语言事实不是待办）；不做 JWT——本库的令牌是**不透明随机串 +
+  服务端会话**，需要 JWT 的项目请另找方案，别指望这里补上。框架中间件适配已交付 moonback 那一层
+  （`mldong/moon-token-moonback`），其余框架照它的形状另写一层即可，库不动。
 - 存储层不落 token 哈希（键位属共享内核，v1 未开放该钩子）。
 
 ## 许可与模块

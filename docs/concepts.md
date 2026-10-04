@@ -1,6 +1,6 @@
 # 核心概念
 
-这页只讲五件事：`realm`、一整对 token、反查族、双层时效、五种键位。
+这页只讲五件事：`realm`、一整对 token、反查族、双层时效、键位形状。
 把它们对上，后面所有 API 的形状都不言自明；对不上，就会觉得本库"一个登录怎么这么多名词"。
 
 本页每个 `moonbit` 块都由 `scripts/docs-check.sh` 真编译真跑过（对注册表已发布件），可以照抄。
@@ -188,17 +188,22 @@ async test "过签发时效报 SessionExpired 而不是含糊未登录" {
 时效类判定一律走可注入时钟 `@port.now_ms()`，所以"过期"这件事能被测出来、也能被演出来，
 不需要真等六小时。用法见 [时钟与熵源](clock-and-entropy.md)。
 
-## 5. 五种键位：状态到底存在哪儿
+## 5. 键位形状：状态到底存在哪儿
 
-内存档与将来的 Redis/SQL 档共用同一套键位约定（realm 是前缀）：
+内存档与将来的 Redis/SQL 档共用同一套键位约定（realm 是前缀）。六类记录 + 一条派生索引：
 
 | 键 | 装什么 | 谁写它 | 谁读它 |
 |---|---|---|---|
 | `{realm}:T:{token}` | 会话记录：login_id、device、login_time、expire_at、last_active、status、refresh 绑定、extra | 签发 / 续期 / 落墓碑 | 每次鉴权 |
-| `{realm}:A:{login_id}` | 反查族：成员 `(device, token, expire_at)` + `version` | `FamilyPatch` 唯一入口 | 踢/顶/在线列表/Shared 复用 |
+| `{realm}:A:{login_id}` | 反查族：成员 `(device, token, expire_at, login_time)` + `version` | `FamilyPatch` 唯一入口 | 踢/顶/在线列表/Shared 复用/上限淘汰 |
 | `{realm}:R:{refresh}` | refresh → (login_id, device, 绑定的 access) | 签发 | `rotate`（原子取删） |
 | `{realm}:S:{login_id}` | 账号级会话属性（跨该账号所有 token 共享的业务附加态） | `update_account_session` | `get_account_session` |
 | `{realm}:D:{login_id}` | 封禁记录：`until` + `reason` | `disable` | 每次鉴权与登录 |
+| `{realm}:P:{token}` | 授权快照：perms + roles + 超管位 + `built_at` | 首次鉴权取到数之后回填 | 同一枚会话的后续判定（命中就不回业务库） |
+| `{realm}:Z` | 活会话索引（派生、无载荷）：在线列表枚举与上限淘汰共用的一条排序依据 | Redis 版在增删会话时维护；**内存版不真建这条键**，遍历自有表即可 | `list_online`；**不参与任何裁决** |
+
+`P:` 与 `Z` 都是**派生缓存**：权威永远在 `T:`。它们缺失或损坏的最坏结果只能是"多问一次业务"或"少枚举几条"，
+绝不允许变成放行或拦人的依据（数据模型不变量 8）。
 
 两条共同形状，值得单独记住：
 

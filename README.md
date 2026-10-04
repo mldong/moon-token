@@ -17,7 +17,7 @@ once third-party drivers mature.
 |---|---|
 | 双向映射 | `token → loginId` 正查 + `loginId → token 族` 反查，踢人/顶人/在线列表全靠反查 |
 | 会话分层 | 账号级会话 + 令牌级会话；设备维度是反查族内的分组 |
-| 双层时效 | 签发时效 `timeout` + 活跃时效 `active_timeout`；"记住我"是长时效档 |
+| 双层时效 | 签发时效 `timeout` + 活跃时效 `active_timeout`（**活跃时效只在 `renewal = IdleMark` 档判**，默认档不看它）；"记住我"是长时效档 |
 | 精确反馈 | 被踢 / 被顶 / 过期 / 封禁各报各的原因，不塌成"未登录" |
 | 并发三态 | `Coexist`（默认共存）/ `Supersede`（顶人下线）/ `Shared`（同设备共用一个 token） |
 | 滑动续期 | `SlideOnAccess`（带节流窗，默认 60s）/ `IdleMark`（活跃标记） |
@@ -30,14 +30,22 @@ once third-party drivers mature.
 
 ## 安装
 
+四个已发布模块按需引（都发到 mooncakes.io，包页面即模块目录的 README）：
+
 ```bash
 moon update
-moon add mldong/moon-token
-moon add mldong/moon-token-store   # 内存实现（核心包已依赖，通常无需单独加）
+moon add mldong/moon-token             # 核心：应用层用例、领域裁决、守卫、事件、令牌风格
+moon add mldong/moon-token-store       # 契约与内存适配器（核心包已依赖，通常无需单独加）
+moon add mldong/moon-token-store-file  # 文件后端：内存为主 + 写穿透，重启不丢会话
+moon add mldong/moon-token-moonback    # moonback 适配层：逐路由守卫、主体进请求上下文
 ```
 
-要求 MoonBit 工具链为当前稳定版（`moon version --all` 查看）。本仓库在
-`preferred_target = "wasm"` 下开发与测试；async 运行时来自官方 `moonbitlang/async`。
+要跑 async 用例或服务另需 `moon add moonbitlang/async`。
+包页面：https://mooncakes.io/docs/mldong/moon-token （其余三个同名前缀）。
+
+工具链要求：`moonc` **不低于 0.10.14**（`moon version --all` 查看；CI 装官方 latest）。
+本仓库在 `preferred_target = "wasm"` 下开发与测试——native 目标在 Windows 需要 MSVC 工具链，
+那档读数由 CI 的 Linux job 出。async 运行时来自官方 `moonbitlang/async`。
 
 ## 最小用法
 
@@ -55,16 +63,33 @@ pub(all) struct MyPerms {
   roles : Array[String]
 }
 
-impl @port.PermissionProvider for MyPerms with fn get_permissions(self, _login_id, _device, _extra) {
+pub impl @port.PermissionProvider for MyPerms with fn get_permissions(
+  self,
+  _login_id,
+  _device,
+  _extra,
+) {
   self.permissions
 }
 
-impl @port.PermissionProvider for MyPerms with fn get_roles(self, _login_id, _device, _extra) {
+pub impl @port.PermissionProvider for MyPerms with fn get_roles(self, _login_id, _device, _extra) {
   self.roles
 }
 
-impl @port.PermissionProvider for MyPerms with fn is_super_admin(self, _login_id, _device, _extra) {
+pub impl @port.PermissionProvider for MyPerms with fn is_super_admin(
+  _self,
+  _login_id,
+  _device,
+  _extra,
+) {
   false
+}
+
+// 没有这一行，点号调用会报 implicit_impl_as_method；本仓零警告口径下它是错误
+pub extend MyPerms with @port.PermissionProvider::{
+  get_permissions,
+  get_roles,
+  is_super_admin,
 }
 
 // 3. 装配一个账号体系（启动期一次，无反射、无扫描魔法）
@@ -88,10 +113,15 @@ let login_id = auth.check_login(result.token)   // "u1"
 auth.kickout("u1", device="pc") |> ignore
 //   -> NotLogin(KickedOut)，而不是笼统的"未登录"
 
-// 6. 守卫：保护面 + 豁免 + 追加断言
+// 6. 守卫：保护面 + 豁免，然后编排一次请求（不通过就抛，原因精确到档）
 let route_guard = @guard.RouteGuard::new()
   .match_pattern("/api/**")
   .not_match_pattern("/api/public/**")
+
+@guard.run_guard(auth, route_guard, {
+  path: fn() { "/api/user/info" },
+  header: fn(name) { if name == "Authorization" { Some(result.token) } else { None } },
+}) |> ignore
 ```
 
 ## 完整可运行示例
@@ -133,7 +163,7 @@ bash scripts/mw-smoke.sh                      # 另开终端：豁免/两腿/推
 | 文档 | 讲什么 |
 |---|---|
 | [快速开始](docs/quick-start.md) | 装好、五分钟跑通一条完整链，逐步给真读数 |
-| [核心概念](docs/concepts.md) | realm、access/refresh 整对、反查族、双层时效、五种键位形状 |
+| [核心概念](docs/concepts.md) | realm、access/refresh 整对、反查族、双层时效、键位形状（含 `P:` 授权快照与 `Z` 活会话索引） |
 | [登录与并发策略](docs/login-and-concurrency.md) | `Coexist` / `Supersede` / `Shared` 三态与各自适用场景 |
 | [会话与踢人](docs/session-management.md) | 在线列表、设备列表、token 会话/账号会话读写、踢/顶/封禁/解禁 |
 | [刷新与轮转](docs/refresh-rotation.md) | 全量轮转语义、重放防护、为什么**不**校验绑定的 access 是否存活 |
@@ -173,8 +203,22 @@ bash scripts/mw-smoke.sh                      # 另开终端：豁免/两腿/推
 分层、端口形状、默认值口径与测试矩阵见仓库内文档；本 README 只保证**照着敲就能跑**。
 
 ```bash
-bash scripts/gate.sh     # 本地门禁：零警告 + 用例条数与矩阵一致 + 0 failed
+bash scripts/gate.sh     # 本地门禁：零警告 + 用例条数与矩阵一致 + 0 failed + 文档真跑
 ```
+
+## 持续集成
+
+`.github/workflows/publish.yml` 一条流水做完两件事，`verify` 是 `publish` 的硬前置：
+
+| 阶段 | 覆盖 |
+|---|---|
+| 检查 | `moon check --target wasm`——**零警告口径**，出现 `Warning` 即红 |
+| 构建 | `moon build`，wasm 与 native 双档 |
+| 测试 | `moon test`，wasm 与 native 双档，并**断言用例条数**（wasm-gc 档会静默丢弃 `async test` 还报 passed，所以条数是硬判据、不是顺带看一眼） |
+| 可复现 | README 那段最小用法 + `docs/` 全部代码块 + 四个模块 README，逐字灌进独立工程真编译真跑，同样判零警告 |
+
+触发方式：推 `v*.*.*` tag ⇒ 检查通过就发布到 mooncakes；`workflow_dispatch` ⇒ 默认只检查，勾 `publish` 才发。
+发布之后还会**只依赖注册表已发布件**再跑一遍文档检查——那一步就是"用户今天照文档敲能不能跑"的证据。
 
 ## 已知限制
 
@@ -185,9 +229,14 @@ bash scripts/gate.sh     # 本地门禁：零警告 + 用例条数与矩阵一�
   `wasm-gc` 档无平台熵源，需改用 `opaque_style_with_seed` 或 `opaque_style_with` 显式注入；
   Windows native 目标需 MSVC 工具链（`rand_s`），Linux/CI 与 wasm 档不受影响。
 - 随机流是 core 提供的 **ChaCha8（8 轮变体）**，本项目不宣称其等同 ChaCha20 强度。
-- 不做注解式鉴权（语言无注解）；二级认证与 JWT 风格令牌归下一轮。
+- 不做注解式鉴权（语言无注解，这是语言事实）；不做 JWT——令牌是不透明随机串 + 服务端会话。
   web 框架适配已交付 moonback 那一层（`mldong/moon-token-moonback`），其余框架照它的形状接。
 
-## License
+## 许可与来源
 
-Apache-2.0. See [LICENSE](LICENSE).
+Apache-2.0，见 [LICENSE](LICENSE)。
+
+本项目未移植、未翻译、未复制任何第三方代码；发布包里不含 vendored 的第三方源
+（依赖只有官方 `moonbitlang/async` 与 `moonbitlang/moonback`，各自按其许可证条款正常引用），
+因此没有第三方许可证的继承义务。分层结构、存储端口形状、意图补丁枚举、错误词汇与接口命名都是本仓自持的；
+每个默认值与判定口径"为什么这样定"记在 `docs/data-model.md` 的决策表里。
