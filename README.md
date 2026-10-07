@@ -44,7 +44,8 @@ moon add mldong/moon-token-moonback    # moonback 适配层：逐路由守卫、
 要跑 async 用例或服务另需 `moon add moonbitlang/async`。
 包页面：https://mooncakes.io/docs/mldong/moon-token （其余三个同名前缀）。
 
-工具链要求：`moonc` **不低于 0.10.14**（`moon version --all` 查看；CI 装官方 latest）。
+工具链要求：**跟随官方最新稳定版**（本机代次用 `moon version --all` 现读；CI 每次装官方 latest，
+本库始终在最新工具链上开发与验证——不钉旧版本、也不靠降级依赖绕版本偏斜）。
 本仓库在 `preferred_target = "wasm"` 下开发与测试——native 目标在 Windows 需要 MSVC 工具链，
 那档读数由 CI 的 Linux job 出。async 运行时来自官方 `moonbitlang/async`。
 
