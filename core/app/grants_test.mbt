@@ -307,3 +307,28 @@ async test "A39 轮转把登录属性搬到新会话：换 token 不该换掉业
   assert_eq(probe.extras[0].get("ip"), Some("10.0.0.1"))
   @port.set_clock(None)
 }
+
+///|
+async test "A44 按枚踢只作废那一枚的快照：同账号另一枚仍吃缓存，不多问业务" {
+  @port.set_clock(Some(fn() { 9_700_000L }))
+  reset_probe(["user:info"], [], false)
+  let auth = grant_auth()
+  let keep = auth.login("u1", device="pc").token
+  let drop = auth.login("u1", device="pc").token
+  assert_true(auth.has_permission(keep, ["user:info"]))
+  assert_true(auth.has_permission(drop, ["user:info"]))
+  // 两枚会话各问满三个供数方法
+  assert_eq(probe.calls, 6)
+  assert_eq(auth.kickout_token(drop), 1)
+  let code = try {
+    auth.check_login(drop) |> ignore
+    -1
+  } catch {
+    err => code_of(err)
+  }
+  assert_eq(code, @port.KickedOut.code())
+  // 留下的那枚必须还吃自己的快照：判定照旧、提问数不涨
+  assert_true(auth.has_permission(keep, ["user:info"]))
+  assert_eq(probe.calls, 6)
+  @port.set_clock(None)
+}

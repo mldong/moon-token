@@ -514,6 +514,53 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::kickout(
 }
 
 ///|
+/// 按枚踢下线：目标集合只有这一枚 token，同账号同设备的其余会话一律不动。
+/// 与 `kickout(login_id, device?)` 并存而非替代——后者是账号+设备粒度，而服务端把所有登录
+/// 都落在同一个 device（默认都写 `"pc"` 很常见）时，它会连带踢掉该设备上的其它会话。
+/// 形状走 `evict_overflow` 的 Kick 那一支：落墓碑 + `ForgetTokens` 摘成员（成员不摘，
+/// 保留窗内的墓碑会被下一次登录数进 `max_sessions` 上限）。差别在于目标已知为一枚，
+/// 所以事件能照 `logout` 的口径带上真 device，而不是批量动作那种空串。
+pub async fn[S : @port.TokenStore, P] TokenAuth::kickout_token(
+  self : TokenAuth[S, P],
+  token : String,
+) -> Int raise @port.TokenError {
+  match self.read_session(token) {
+    None => 0
+    Some(session) =>
+      if !session.status().same(@port.Active) {
+        // 已是墓碑：不重发事件，也不把保留窗再往后搬一次
+        0
+      } else {
+        let login_id = session.login_id()
+        let refresh = session.refresh_token()
+        let now = @port.now_ms()
+        self.clear_grants([token])
+        self.store.apply(
+          @port.MarkStatus(
+            [token],
+            @port.Kicked,
+            @policy.kick_deadline(now, self.config.kick_grace_ms()),
+          ),
+        )
+        self.store.apply(@port.ForgetTokens(login_id, [token]))
+        if !refresh.is_empty() {
+          self.store.apply(@port.RemoveKeys([self.keys.refresh(refresh)]))
+        }
+        self.events.fire(
+          @event.TokenEvent::make(
+            @event.Kicked,
+            login_id,
+            session.device().id,
+            token,
+            now,
+          ),
+        )
+        1
+      }
+  }
+}
+
+///|
 pub async fn[S : @port.TokenStore, P] TokenAuth::supersede(
   self : TokenAuth[S, P],
   login_id : String,

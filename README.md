@@ -19,6 +19,7 @@ once third-party drivers mature.
 | 会话分层 | 账号级会话 + 令牌级会话；设备维度是反查族内的分组 |
 | 双层时效 | 签发时效 `timeout` + 活跃时效 `active_timeout`（**活跃时效只在 `renewal = IdleMark` 档判**，默认档不看它）；"记住我"是长时效档 |
 | 精确反馈 | 被踢 / 被顶 / 过期 / 封禁各报各的原因，不塌成"未登录" |
+| 两种踢人粒度 | `kickout` 按账号+设备，`kickout_token` 按一枚 token——管理端"在线用户"页点一行只撤那一行，同设备其它会话不动 |
 | 并发三态 | `Coexist`（默认共存）/ `Supersede`（顶人下线）/ `Shared`（同设备共用一个 token） |
 | 滑动续期 | `SlideOnAccess`（带节流窗，默认 60s）/ `IdleMark`（活跃标记） |
 | 可插拔存储 | async 仓储端口 + 意图补丁（`FamilyPatch`），换后端不改业务代码；已交付**内存**与**文件**两个后端 |

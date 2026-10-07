@@ -1,6 +1,6 @@
 ///|
-/// A 系列（A1–A30、A40–A42）：打在**应用层用例**上——async + 内存适配器 + 注入时钟。
-/// A31–A39 在同目录 `grants_test.mbt`（授权快照与供数端口那一组），编号接续不重号。
+/// A 系列（A1–A30、A40–A43、A45–A49）：打在**应用层用例**上——async + 内存适配器 + 注入时钟。
+/// A31–A39 与 A44 在同目录 `grants_test.mbt`（授权快照与供数端口那一组），编号接续不重号。
 /// 黑盒测试档（`*_test.mbt`）：只有它才吃 moon.pkg 里 `for "test"` 的 import
 /// （白盒档的生成驱动找不到 `moonbitlang/async`，实测 `Error [4020]`），
 /// 所以包内符号一律显式 `@app.` 限定，免 `test_unqualified_package` 警告。
@@ -803,4 +803,97 @@ async test "A43 一次鉴权只做一次 T: 读：authenticate 不重复读同�
   sprobe.token_reads = 0
   auth.has_permission(t, ["user:info"]) |> ignore
   assert_eq(sprobe.token_reads, 1)
+}
+
+///|
+async test "A45 按枚踢：同账号同设备的另一枚不受影响，在线列表只少这一条" {
+  let auth = standard()
+  let keep = auth.login("u1", device="pc")
+  let drop = auth.login("u1", device="pc")
+  assert_eq(auth.get_token_list_by_login_id("u1").length(), 2)
+  assert_eq(auth.kickout_token(drop.token), 1)
+  assert_eq(access_code(auth, drop.token), @port.KickedOut.code())
+  assert_eq(auth.check_login(keep.token), "u1")
+  assert_true(auth.has_permission(keep.token, ["user:info"]))
+  let after = auth.get_token_list_by_login_id("u1")
+  assert_eq(after.length(), 1)
+  assert_eq(after[0].token, keep.token)
+}
+
+///|
+async test "A46 对照：kickout(login_id, device) 仍是账号+设备粒度，同设备两枚一起掉" {
+  let auth = standard()
+  let first = auth.login("u2", device="pc").token
+  let second = auth.login("u2", device="pc").token
+  assert_eq(auth.kickout("u2", device="pc"), 2)
+  assert_eq(access_code(auth, first), @port.KickedOut.code())
+  assert_eq(access_code(auth, second), @port.KickedOut.code())
+}
+
+///|
+async test "A47 幂等：查无此枚与二次踢都返 0、不重发事件；按枚那一发带真 device" {
+  let auth = standard()
+  let seen : Array[String] = []
+  auth.on_event(ev => seen.push("\{ev.event_type.code()}:\{ev.device}"))
+  let keep = auth.login("u3", device="pad").token
+  let drop = auth.login("u3", device="pad").token
+  assert_eq(auth.kickout_token(""), 0)
+  assert_eq(auth.kickout_token("not-a-real-token"), 0)
+  // 空跑一条事件都不发：此刻只有那两次登录的记录
+  assert_eq(seen.length(), 2)
+  assert_eq(auth.kickout_token(drop), 1)
+  assert_eq(seen[2], "3:pad")
+  // 二次踢不报错、不重发，也不把保留窗再往后搬一次
+  assert_eq(auth.kickout_token(drop), 0)
+  assert_eq(seen.length(), 3)
+  assert_eq(auth.kickout_token(keep), 1)
+  assert_eq(access_code(auth, keep), @port.KickedOut.code())
+  assert_eq(auth.get_token_list_by_login_id("u3").length(), 0)
+}
+
+///|
+async test "A48 按枚踢把绑定的 refresh 一起作废，另一枚的 refresh 照样能轮转" {
+  let auth = standard()
+  let keep = auth.login("u4", device="pc")
+  let drop = auth.login("u4", device="pc")
+  assert_eq(auth.kickout_token(drop.token), 1)
+  let code = try {
+    auth.rotate(drop.refresh_token) |> ignore
+    -1
+  } catch {
+    err => code_of(err)
+  }
+  assert_eq(code, @port.RefreshInvalid.code())
+  let next = auth.rotate(keep.refresh_token)
+  assert_eq(auth.check_login(next.token), "u4")
+  // 整对轮转：旧 access 同时失效，但这与另一枚被踢无关
+  assert_eq(access_code(auth, keep.token), @port.UnknownToken.code())
+}
+
+///|
+async test "A49 摘族成员：保留窗内的墓碑不占 max_sessions 名额（kickout 会占）" {
+  let cfg = @app.TokenConfig::default()
+  cfg.max_sessions = 2
+  cfg.overflow_exit = @port.Kick
+  let auth = new_auth("cap", cfg, [], [])
+  let first = auth.login("u1", device="d1")
+  advance(10L)
+  let second = auth.login("u1", device="d2")
+  advance(10L)
+  assert_eq(auth.kickout_token(second.token), 1)
+  let third = auth.login("u1", device="d3")
+  // 族里只剩 1 个活成员，加新签正好 2 ⇒ 不该触发上限淘汰
+  assert_eq(access_code(auth, first.token), -1)
+  assert_eq(access_code(auth, third.token), -1)
+  assert_eq(access_code(auth, second.token), @port.KickedOut.code())
+  // 阳性对照：换成 kickout（成员保留在族里）就占住名额，最老那枚被上限剔掉
+  let other = new_auth("cap2", cfg, [], [])
+  let oldest = other.login("u1", device="d1")
+  advance(10L)
+  other.login("u1", device="d2") |> ignore
+  advance(10L)
+  assert_eq(other.kickout("u1", device="d2"), 1)
+  advance(10L)
+  other.login("u1", device="d3") |> ignore
+  assert_eq(access_code(other, oldest.token), @port.KickedOut.code())
 }

@@ -1,7 +1,8 @@
 # 会话与批量操作
 
-登录之后要对"人"做的事——查在线、改附加态、踢、顶、封——全部以 `login_id` 为轴，
-靠反查族（`A:` 键）落地。本页代码块由 `scripts/docs-check.sh` 逐块真编译真跑。
+登录之后要对"人"做的事——查在线、改附加态、踢、顶、封——大多以 `login_id` 为轴，
+靠反查族（`A:` 键）落地；按枚的那两支（`logout` / `kickout_token`）不走反查轴，见 §3 与 §8。
+本页代码块由 `scripts/docs-check.sh` 逐块真编译真跑。
 
 ```moonbit
 pub(all) struct P {
@@ -220,6 +221,7 @@ async test "宽窗内 KickedOut、窗外 UnknownToken，sweep 返回被回收的
 | `rotate` | 删旧 + 新增 | 摘旧 + 加新 | 原子取删 + 新增 | — | — |
 | `logout` | **删** | 摘除 | **联动删** | — | — |
 | `kickout` / `supersede` | 落墓碑（不删） | 成员保留 | — | — | — |
+| `kickout_token` | 落墓碑（不删） | **摘成员** | **联动删** | — | — |
 | `disable` / `undo_disable` | — | — | — | — | 写 / 删 |
 | `update_*_session` | 改 extra | — | — | 改属性 | — |
 | `sweep` | 回收过期与墓碑 | 剔除过期成员 | 随 access 失效 | 随族到期 | 到期回收 |
@@ -296,3 +298,53 @@ for row in rows {
 > 上面第一段是 `moonbit` 围栏，会被 `scripts/docs-check.sh` 抽进独立工程**对注册表已发布件真编译真跑**；
 > 第二段留 `text` 是因为它只是形状示意（`rows` 来自上一段的局部绑定，抽成独立包接不上）。
 > 0.1.1 之前这两段都只能是 `text`——那时注册表里的代次还没有这两个方法。
+
+## 8. 两种踢人粒度：按账号+设备，或按一枚
+
+§1 与 §7 那两页"在线用户"列表上的踢下线按钮，按下时针对的是**一行**，也就是一枚 token。
+`kickout(login_id, device?)` 给不了这个粒度：它的目标集合是"该账号在该设备上的全部 token"，
+而服务端把所有登录都写成同一个 device（例如同一个 `"pc"`）是很常见的默认——于是点一行掉一整片，
+同设备的其它会话一起收到 `KickedOut`。`kickout_token(token)` 把目标集合限定为传入的那一枚，
+其余会话、账号族索引与 `Active` 判定一律不动。
+
+| | `kickout(login_id, device?)` | `kickout_token(token)` |
+|---|---|---|
+| 目标集合 | 该账号（可限定设备）的全部 token | 传入的那一枚 |
+| 返回值 | 被踢枚数 | 1；查无此枚、或已是墓碑 ⇒ **0（幂等）** |
+| `A:` 成员 | 保留 | **摘除**——保留窗内的墓碑不该再被下一次登录数进 `max_sessions` |
+| `R:` 绑定 | 不动 | **联动删**——按枚撤就撤干净，别让被踢方拿旧 refresh 轮转出一枚新会话 |
+| 事件的 `device` | 空串（批量动作，填"最后一个设备名"是假信息） | 该会话的真 device（这一发本就按一枚发生） |
+
+```moonbit
+async fn kick_one_of_two() -> Array[String] raise {
+  let a = auth()
+  let keep = a.login("u7", device="pc")
+  let drop = a.login("u7", device="pc")
+  let first = a.kickout_token(drop.token)
+  // 二次踢同一枚：不抛错、不重发事件，只报 0
+  let again = a.kickout_token(drop.token)
+  let keep_reason = a.check_login(keep.token)
+  let drop_reason = a.check_login(drop.token) catch { err => err.message() }
+  let refresh_after = try {
+    a.rotate(drop.refresh_token) |> ignore
+    "还能轮转"
+  } catch {
+    err => err.message()
+  }
+  let alive = a.get_token_list_by_login_id("u7").length().to_string()
+  ["\{first}/\{again}", keep_reason, drop_reason, refresh_after, alive]
+}
+
+async test "按枚踢只撤这一枚：另一枚照旧在线，被踢那枚的 refresh 一起失效" {
+  let r = kick_one_of_two()
+  assert_eq(r[0], "1/0")
+  assert_eq(r[1], "u7")
+  assert_eq(r[2], "not login: KickedOut")
+  assert_eq(r[3], "not login: RefreshInvalid")
+  assert_eq(r[4], "1")
+}
+```
+
+被踢方读到的仍是精确原因 `KickedOut`，而不是注销那一支的 `UnknownToken`——**这就是按枚踢与按枚注销
+的分界**：注销是本人自愿退出，踢是别人撤掉这一次登录，两者的原因不该混（§3 与
+[错误词汇表](error-vocabulary.md) 同一口径）。

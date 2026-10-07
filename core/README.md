@@ -19,6 +19,7 @@ moon add moonbitlang/async      # async 运行时；库本身不依赖它，但�
 |---|---|
 | 双向映射 | `token → login_id` 正查 + `login_id → token 族` 反查；踢人/顶人/在线列表全靠反查 |
 | 精确反馈 | 被踢 / 被顶 / 过期 / 闲置超时 / 无 token / 伪造 / refresh 重放——**七种原因各报各的**，绝不塌成"未登录" |
+| 两种踢人粒度 | `kickout(login_id, device?)` 按账号+设备，`kickout_token(token)` 只撤那一枚；按枚那一支把绑定的 refresh 一并作废，同设备其余会话不动 |
 | 并发三态 | `Coexist`（默认共存）/ `Supersede`（顶人下线）/ `Shared`（同设备共用一枚） |
 | 双层时效 | 签发时效 `timeout` + 活跃时效 `active_timeout`（**只在 `renewal = IdleMark` 档判**，默认 `SlideOnAccess` 不看它）；"记住我"是长时效档 |
 | 全量轮转 | `rotate` 换新整对，旧 access 与旧 refresh 同时失效；**不校验绑定 access 是否存活**（那是必现缺陷的来源） |

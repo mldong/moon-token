@@ -59,7 +59,7 @@ fn sink_auth() -> (@app.TokenAuth[@mem.MemoryStore, P], Sink) {
 |---|---|---|
 | 1 | `LoggedIn` | 签发（或 `Shared` 复用）成功、三处写库之后 |
 | 2 | `LoggedOut` | 注销漏斗走完（`T:` 删 + 族摘 + `R:` 联动删） |
-| 3 | `Kicked` | 被踢，落墓碑 |
+| 3 | `Kicked` | 被踢，落墓碑（`kickout` 按账号/设备，`kickout_token` 按一枚） |
 | 4 | `Superseded` | 被顶（`Supersede` 策略下旧会话自动落墓碑，或被显式 `supersede`） |
 | 5 | `Disabled` | 账号被封禁 |
 | 6 | `Enabled` | 封禁被解除 |
@@ -98,7 +98,8 @@ async test "七种事实各来一次（登录发生了三次，所以共 8 条�
 
 > `Kicked` / `Disabled` / `Enabled` 的载荷里 `device` 是空串：这三件事的作用域是**账号**
 > （`kickout` 不带 device 时踢全部），把"最后一个设备名"填进去会是假信息。
-> 注销那条带 device，是因为 `logout` 本来就是按一枚 token 发生的。
+> 按一枚发生的那几件例外——`logout` 与 `kickout_token` 都带真 device，
+> 因为"这一次"本来就落在某一枚具体的 token 上。
 
 ## 2. 观察者炸了，业务照旧
 
