@@ -159,7 +159,7 @@ test "opaque_style_with：宿主给 32 字节，两次签发不同" {
 | 目标档 | 平台熵 | 该用哪个入口 |
 |---|---|---|
 | `wasm` | 有 | `opaque_style()` |
-| `wasm-gc` | **无**（`Rand::new()` 会静默回落到硬编码种子） | `opaque_style_with_seed` / `opaque_style_with` |
+| `wasm-gc` | **无**（`Rand()` 会静默回落到硬编码种子） | `opaque_style_with_seed` / `opaque_style_with` |
 | native（Linux/macOS） | 有 | `opaque_style()` |
 | native（Windows） | 需要 MSVC 运行库（`rand_s`）；只有 MinGW 时拿不到 | 同上，或换宿主 |
 

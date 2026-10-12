@@ -2,7 +2,7 @@
 /// token 风格（值对象工厂端口，sync 小 SPI = 闭包组）。
 /// **熵源纪律**（设计文档 §7.1/§7.2 的三档实测结论）：
 /// · wasm 档有平台熵（`@env.rand(32)=Some`，跨进程三次首值全不同）⇒ 默认档可用；
-/// · wasm-gc 档无熵，且 `@random.Rand::new()` 在无熵时**静默回落硬编码种子**
+/// · wasm-gc 档无熵，且 `@random.Rand()` 在无熵时**静默回落硬编码种子**
 ///   （实测两次序列完全相同）⇒ 必须先守卫、拿不到熵就 `abort`，绝不静默回落；
 /// · Windows native 需 MSVC 运行时（MinGW 下 `rand_s` 编不过）⇒ 由 CI 的档覆盖。
 /// core 提供的是 **ChaCha8（8 轮变体）**，对外不宣称等同 ChaCha20 强度。
@@ -79,7 +79,7 @@ fn build_style(source : @random.Rand, size : Int) -> TokenStyleFns {
 /// 默认档：平台熵播种的 ChaCha8 流。无熵即 abort（不静默回落固定种子）。
 pub fn opaque_style(len? : Int = DEFAULT_TOKEN_CHARS) -> TokenStyleFns {
   require_platform_entropy()
-  build_style(@random.Rand::new(), token_chars(len))
+  build_style(@random.Rand(), token_chars(len))
 }
 
 ///|
