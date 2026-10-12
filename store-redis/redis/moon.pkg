@@ -1,0 +1,13 @@
+supported_targets = "+native+wasm"
+
+import {
+  "mldong/moon-token-store/port",
+  "oboard/redis" @redis_client,
+}
+
+import {
+  "moonbitlang/core/env",
+  "moonbitlang/core/encoding/utf8" @encoding/utf8,
+  "mldong/moon-token-store/memory" @mem,
+  "moonbitlang/async",
+} for "test"

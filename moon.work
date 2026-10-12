@@ -2,6 +2,7 @@ members = [
   "./store",
   "./core",
   "./store-file",
+  "./store-redis",
   "./moonback",
   "./examples",
 ]
