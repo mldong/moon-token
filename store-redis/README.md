@@ -32,13 +32,30 @@ compare-and-set（比对整块旧载荷）＋有界重试，比对不上就重�
    尺子函数在 `mapping_wbtest.mbt` 的 RM1–RM5 里对着一批数据钉住，真机上 RS7 再拿内存版与
    Redis 版比同一批会话给出的页序。
 
-## 用之前要知道的三件事（`oboard/redis` 的形状，不是本模块的发明）
+## 服务端版本：支持 Redis 5.0 及以上
+
+本模块只用一套**早在 Redis 2.6/2.8 就存在**的命令：`SET` `GET` `DEL` `EXISTS` `MGET` `PING`
+`PTTL` `PEXPIREAT` `EVAL`(Lua 5) `ZADD` `ZREM` `ZRANGE` `HSET` `HGETALL` `SCAN … MATCH … COUNT`。
+**实测过的最低版本是 Redis 5.0.4**——正是官网一键包（17 个部署包）实际钉的那一版，也是开发库
+192.168.1.160 跑的那一版；实测过的最高版本是 8.0.5。同一批 RS1–RS8 用例在这两台上都是全绿，
+所以"支持 5.0+"不是按命令集推断，是跑出来的。低于 5.0 只到 2.8 这一段属于"按命令集应可用、
+未实测"，别当承诺引用。
+
+在 5.0.4 上实测**不存在**的服务端命令（库里有对应 typed 方法，调了就 `ERR unknown command`，
+响失败不静默）：`GETDEL` `GETEX` `COPY` `HRANDFIELD` `SMISMEMBER` `ZRANGESTORE` `XAUTOCLAIM`
+`SINTERCARD` `LMPOP` `ZMPOP` `EXPIRETIME` `GEOSEARCH`。
+实测**语法不支持**的 `SET` 选项：`PXAT`、`EXAT`、`KEEPTTL`（三者都是 6.0+；相对 `EX`/`PX` 全版本可用）。
+另有一批与版本无关的门槛：`json.mbt` 那套 `JSON.*` 要 **RedisJSON 模块**，不是 Redis 版本问题。
+
+⇒ 维护本模块的纪律：**别为了省事换成 6.x 才有的命令**。要绝对到期点就 `SET` + `PEXPIREAT` 两步；
+要原子取删就 `EVAL`。改成 `GETDEL`/`SET … PXAT` 会在 8.x 上一片绿、发到 5.0.4 立刻报红。
+
+## 用之前要知道的四件事（`oboard/redis` 的形状，不是本模块的发明）
 
 - **`get` 走的是原始命令 + 变体匹配**，不用 typed `get`：后者把"键不存在"报成
   `Err("Type mismatch: expected string")`，与真正的错误同码，鉴权路径上不可分辨。
   同理 `get_many` 不用 `to_array()`（它把 nil 元素渲染成字面串 `"null"`）。
-- **`get_and_del` 用 Lua 而不是 `GETDEL`**：`GETDEL` 要 Redis 6.2+，而我们的一键包实际钉的是
-  5.0.4（16 台服务端里唯一被真实部署的那一版）。
+- **`get_and_del` 用 Lua 而不是 `GETDEL`**：后者要 Redis 6.2+，而我们部署的是 5.0.4。
 - **到期点用 `SET` + `PEXPIREAT` 两步**：`SET ... PXAT` 是 Redis 6.0+ 才认的语法，5.0.4 直接
   `ERR syntax error`。第二步失败就把刚写进去的键删掉——留一个永不过期的会话键，等于把
   "过期即回收"换成"泄漏"，而且不会有任何用例变红。
