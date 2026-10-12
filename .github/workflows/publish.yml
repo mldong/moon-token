@@ -112,7 +112,7 @@ jobs:
           ! grep -q "Warning" check.txt
 
   publish:
-    name: Publish store + core + store-file + moonback to mooncakes
+    name: Publish store + core + store-file + store-redis + moonback to mooncakes
     needs: verify
     # tag 直接发；手动触发要显式勾 publish（push 事件里 inputs 是空的，不会误发）。
     # 坑留痕：第一版这里写成 github.ref_type == 'tags'，v0.1.7 那次 tag 推送整个 publish job 被
@@ -168,7 +168,8 @@ jobs:
           echo "store-file = $(sed -nE 's/^version = "([^"]+)".*/\1/p' store-file/moon.mod | head -1)"
           echo "moonback = $(sed -nE 's/^version = "([^"]+)".*/\1/p' moonback/moon.mod | head -1)"
 
-      # 拓扑序：store 先，core 与 store-file 后，moonback 最后（它 pin 着 core 与 store 的同版本号，接力式）。
+      # 拓扑序：store 先，core / store-file / store-redis 后，moonback 最后（它 pin 着 core 与 store
+      # 的同版本号，接力式）。store-redis 只依赖 store 与注册表上的 oboard/redis，故排在 moonback 前。
       # examples 不发布。
       - name: Publish store
         run: bash .github/scripts/publish-if-absent.sh store mldong/moon-token-store
@@ -178,6 +179,9 @@ jobs:
 
       - name: Publish store-file
         run: bash .github/scripts/publish-if-absent.sh store-file mldong/moon-token-store-file
+
+      - name: Publish store-redis
+        run: bash .github/scripts/publish-if-absent.sh store-redis mldong/moon-token-store-redis
 
       - name: Publish moonback
         run: bash .github/scripts/publish-if-absent.sh moonback mldong/moon-token-moonback

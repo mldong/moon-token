@@ -33,14 +33,14 @@ if [ "$TARGET" = "source" ]; then
     echo "DOCS CHECK FAIL: 读不到 core/moon.mod 的 version/async pin 或 moonback/moon.mod 的 moonback pin" >&2
     exit 1
   }
-  printf 'members = [\n  "%s/store",\n  "%s/core",\n  "%s/store-file",\n  "%s/moonback",\n' \
-    "$REPO" "$REPO" "$REPO" "$REPO" > "$WORK/moon.work"
+  printf 'members = [\n  "%s/store",\n  "%s/core",\n  "%s/store-file",\n  "%s/store-redis",\n  "%s/moonback",\n' \
+    "$REPO" "$REPO" "$REPO" "$REPO" "$REPO" > "$WORK/moon.work"
 fi
 
 shopt -s nullglob
-# 文档 + 四个**已发布模块**的 README：mooncakes 页面渲染的就是模块目录里那份，
+# 文档 + 五个**已发布模块**的 README：mooncakes 页面渲染的就是模块目录里那份，
 # 它必须是自成一体的说明（包里没有仓库根 README，也没有 docs/）。
-files=(docs/*.md core/README.md store/README.md store-file/README.md moonback/README.md)
+files=(docs/*.md core/README.md store/README.md store-file/README.md store-redis/README.md moonback/README.md)
 if [ ${#files[@]} -eq 0 ]; then
   echo "DOCS CHECK FAIL: docs/ 下一个文件都没有（要么补文档，要么把这条门禁摘掉，别留死格）" >&2
   exit 1
@@ -94,6 +94,7 @@ for doc in "${files[@]}"; do
       moon add mldong/moon-token > /dev/null
       moon add mldong/moon-token-store > /dev/null
       moon add mldong/moon-token-store-file > /dev/null
+      moon add mldong/moon-token-store-redis > /dev/null
       moon add mldong/moon-token-moonback > /dev/null
       # 抽出来的代码用了 async 才挂这个依赖：多引一个包对包本身是 unused_package，
       # 而本仓零警告口径下它就是错误（source 模式不用管，async 已在 moon.mod 的 import 里）
@@ -106,8 +107,8 @@ for doc in "${files[@]}"; do
     )
   else
     # workspace 成员之间不能用不带版本的 import（moon 会直接拒），所以照 core/moon.mod 写死当前代次
-    printf 'name = "mldong/doccheck/%s"\nversion = "0.0.0"\nimport {\n  "mldong/moon-token@%s",\n  "mldong/moon-token-store@%s",\n  "mldong/moon-token-store-file@%s",\n  "mldong/moon-token-moonback@%s",\n  "moonbitlang/async@%s",\n  "moonbitlang/moonback@%s",\n}\n' \
-      "$slug" "$VER" "$VER" "$VER" "$VER" "$ASYNC" "$MB" > "$dir/moon.mod"
+    printf 'name = "mldong/doccheck/%s"\nversion = "0.0.0"\nimport {\n  "mldong/moon-token@%s",\n  "mldong/moon-token-store@%s",\n  "mldong/moon-token-store-file@%s",\n  "mldong/moon-token-store-redis@%s",\n  "mldong/moon-token-moonback@%s",\n  "moonbitlang/async@%s",\n  "moonbitlang/moonback@%s",\n}\n' \
+      "$slug" "$VER" "$VER" "$VER" "$VER" "$VER" "$ASYNC" "$MB" > "$dir/moon.mod"
     printf '  "./%s",\n' "$slug" >> "$WORK/moon.work"
   fi
   if [ "$TARGET" = "source" ]; then

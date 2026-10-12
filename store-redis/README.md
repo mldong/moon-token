@@ -76,10 +76,39 @@ compare-and-set（比对整块旧载荷）＋有界重试，比对不上就重�
   那是一次独立的改动（compose + L2 口径 + 三格 SKIP 依据要一起改）。
 - **不发布**：`.github/workflows/publish.yml` 仍只发四模块，本模块不在发版链里；
   要用它上线得先把它接进发布拓扑序（`store` → 本模块）与 `docs-check.sh` 的模块清单。
-- 使用骨架（与 RS1 同源，随包体文档放着，未纳入 `docs-check` 的真编译清单，故不写成可复制即跑的样板）：
+- 使用骨架（与 RS1 同源，`scripts/docs-check.sh` 会把它逐字抽出去真编译真跑；示例跟着
+  `MT_REDIS_*` 这组环境变量走，所以 `scripts/redis-gate.sh` 在哪台服务端上跑，它就真跑在哪台）：
 
-```moonbit nocheck
-let store = @redis_store.RedisStore::open("user", "127.0.0.1", db=0)
-defer store.close()
-let auth = @app.TokenAuth::new("user", @app.TokenConfig::default(), store, provider, @style.opaque_style())
+```moonbit
+async fn uses_redis_store() -> String raise {
+  let host = match @env.get_env_var("MT_REDIS_HOST") {
+    Some(v) => v
+    None => "127.0.0.1"
+  }
+  let db = match @env.get_env_var("MT_REDIS_DB") {
+    Some(v) => match @port.parse_int64(v) {
+      Some(n) => n.to_int()
+      None => 0
+    }
+    None => 0
+  }
+  let store = @redis_store.RedisStore::open("user", host, db=db)
+  defer store.close()
+  let key = store.keys.token("demo")
+  // 4e12 ms ≈ 2096 年：示例不碰真实时钟，也不受机器时间影响
+  let far : Int64 = 4_000_000_000_000L
+  store.set(key, "v=1|login=demo", far)
+  match store.get(key) {
+    None => "没读到"
+    Some(text) => text
+  }
+}
+
+async test "Redis 后端就是同一个端口" {
+  if @env.get_env_var("MT_REDIS_TEST") is Some("1") {
+    assert_eq(uses_redis_store(), "v=1|login=demo")
+  } else {
+    println("SKIP README 示例: 未设 MT_REDIS_TEST=1")
+  }
+}
 ```

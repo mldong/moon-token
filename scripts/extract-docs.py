@@ -18,6 +18,8 @@ PACKAGES = [
     ("port", "mldong/moon-token-store/port", None),
     ("mem", "mldong/moon-token-store/memory", "@mem"),
     ("file", "mldong/moon-token-store-file/file", None),
+    ("redis_store", "mldong/moon-token-store-redis/redis", "@redis_store"),
+    ("env", "moonbitlang/core/env", None),
     ("fs", "moonbitlang/async/fs", None),
     ("mbguard", "mldong/moon-token-moonback/guard", "@mbguard"),
     ("mb", "moonbitlang/moonback", "@mb"),
@@ -51,9 +53,12 @@ def extract(md_path, out_path):
     if "async" in code:
         entries.append('  "moonbitlang/async",')
     lines = ["import {"] + entries + ['} for "test"']
+    # 依赖里只要有人声明了 supported_targets（如 oboard/redis 只支持 native+wasm），
+    # 本包不显式声明就会吃 "does not declare supported_targets" 警告，
+    # 而本仓零警告口径下警告即失败——所以示例包一律自己声明支持档。
     pkg = out_path.rsplit("/", 1)[0] + "/moon.pkg"
     with io.open(pkg, "w", encoding="utf-8", newline="\n") as f:
-        f.write("\n".join(lines) + "\n")
+        f.write('supported_targets = "+native+wasm"\n\n' + "\n".join(lines) + "\n")
     print("blocks=%d imports=%d async=%s" % (len(blocks), used, "async" in code))
 
 
