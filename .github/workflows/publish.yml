@@ -163,16 +163,19 @@ jobs:
           {"token":"${{ secrets.MOON_TOKEN }}","username":"${{ secrets.MOON_USERNAME }}"}
           EOF
 
-      - name: Update registry index + install workspace dependencies
+      - name: Update registry index
         run: |
+          # 裸 `moon install` 在最新工具链上已改成 `moon install <SOURCE> [PATH_IN_REPO]`（装 git 源用），
+          # 无参调用会 exit 2 把整条发布链拦在第 7 步。工作区成员由 moon.work 解析，
+          # 各 publish 步自己会再 `moon update`，这里刷索引就够。
           moon update
-          moon install
 
       - name: Version being published
         run: |
           echo "store = $(sed -nE 's/^version = "([^"]+)".*/\1/p' store/moon.mod | head -1)"
           echo "core  = $(sed -nE 's/^version = "([^"]+)".*/\1/p' core/moon.mod | head -1)"
           echo "store-file = $(sed -nE 's/^version = "([^"]+)".*/\1/p' store-file/moon.mod | head -1)"
+          echo "store-redis = $(sed -nE 's/^version = "([^"]+)".*/\1/p' store-redis/moon.mod | head -1)"
           echo "moonback = $(sed -nE 's/^version = "([^"]+)".*/\1/p' moonback/moon.mod | head -1)"
 
       # 拓扑序：store 先，core / store-file / store-redis 后，moonback 最后（它 pin 着 core 与 store
