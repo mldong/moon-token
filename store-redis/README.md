@@ -6,6 +6,18 @@
 依赖只有两件：`mldong/moon-token-store`（端口与线格式）与 `oboard/redis`（连接与帧）。
 `@port.set_clock` 一类的测试注入不用它关心——过期只由传进来的绝对时刻与 `sweep(now)` 决定。
 
+## 装起来
+
+```bash
+moon update
+moon add mldong/moon-token-store-redis
+moon add mldong/moon-token-store  # 引用 @port 就要显式装：MoonBit 的传递依赖对调用方不自动可见
+moon add moonbitlang/async
+```
+
+`moon.pkg` 里的别名：`port` 取自 `mldong/moon-token-store`，本模块的适配器包是 `redis`
+（别名常写作 `@redis_store`）；要与核心层一起用再引 `mldong/moon-token` 的 `app`。
+
 ## 键位与物理映射
 
 线格式与键名都由共享内核（`store/port`）给出，本模块不自造字段名：
@@ -36,9 +48,8 @@ compare-and-set（比对整块旧载荷）＋有界重试，比对不上就重�
 
 本模块只用一套**早在 Redis 2.6/2.8 就存在**的命令：`SET` `GET` `DEL` `EXISTS` `MGET` `PING`
 `PTTL` `PEXPIREAT` `EVAL`(Lua 5) `ZADD` `ZREM` `ZRANGE` `HSET` `HGETALL` `SCAN … MATCH … COUNT`。
-**实测过的最低版本是 Redis 5.0.4**——正是官网一键包（17 个部署包）实际钉的那一版，也是开发库
-192.168.1.160 跑的那一版；实测过的最高版本是 8.0.5。同一批 RS1–RS8 用例在这两台上都是全绿，
-所以"支持 5.0+"不是按命令集推断，是跑出来的。低于 5.0 只到 2.8 这一段属于"按命令集应可用、
+**实测过的最低版本是 Redis 5.0.4**（与官网一键部署包实际钉的同一版），**实测过的最高版本是 8.0.5**；
+同一批 RS1–RS8 用例在这两台上都是全绿，所以"支持 5.0+"不是按命令集推断，是跑出来的。低于 5.0 只到 2.8 这一段属于"按命令集应可用、
 未实测"，别当承诺引用。
 
 在 5.0.4 上实测**不存在**的服务端命令（库里有对应 typed 方法，调了就 `ERR unknown command`，
@@ -63,21 +74,21 @@ compare-and-set（比对整块旧载荷）＋有界重试，比对不上就重�
 
 ## 测试怎么跑
 
-- 免服务端（CI 与本地默认）：`moon test --target wasm` ⇒ RS1–RS8 会**打印 SKIP 并计入通过**。
-- 真机（必须有一台只归自己的 redis）：`bash scripts/redis-gate.sh`——它把任何 SKIP 判成失败，
-  并固定要求 `MT_REDIS_HOST`。两台服务端都要跑过：本机沙箱 Redis 8.0.5 与开发库 Redis 5.0.4。
-  用例自带清理，收尾会自证该 realm 名下无残留。
+- 免服务端（CI 与本地默认）：`moon test --target wasm` ⇒ RS1–RS8 会**打印 SKIP 并计入通过**，
+  所以"这条全绿"不等于"Redis 这条腿跑过"。
+- 真机（要有一台只归自己的 Redis 5.0+）：先起服务端，比如
+  `redis-server --port 6379 --save '' --appendonly no`，或 `docker run --rm -p 6379:6379 redis:8`；
+  再 `MT_REDIS_HOST=127.0.0.1 bash scripts/redis-gate.sh`。这道门把任何 SKIP 判成失败，
+  并且固定要求给 `MT_REDIS_HOST`——不给就是没测。端口、库号、鉴权用
+  `MT_REDIS_PORT`／`MT_REDIS_DB`／`MT_REDIS_PWD` 换。用例自带清理，收尾会自证该 realm 名下无残留。
+- 收口要两台服务端都跑过：一支新版 Redis，一支 5.0.4 那档老服务端（上面"支持 5.0+"就是这么来的）。
 - 负向对照已做过：停掉服务端后 RS1–RS8 正好 8 条转红，说明这套断言不是空转。
 
 ## 还没接的东西（不是遗漏，是范围）
 
-- **不进一键包**：`mldong-moon-jeeflow` 的 compose 目前没有 redis 服务，L2 跑批仍带
-  `--no-redis`，跨栈门禁那三格显式 SKIP 的结构性依据不变。真要多实例共享会话，
-  那是一次独立的改动（compose + L2 口径 + 三格 SKIP 依据要一起改）。
-- **不发布**：`.github/workflows/publish.yml` 仍只发四模块，本模块不在发版链里；
-  要用它上线得先把它接进发布拓扑序（`store` → 本模块）与 `docs-check.sh` 的模块清单。
-- 使用骨架（与 RS1 同源，`scripts/docs-check.sh` 会把它逐字抽出去真编译真跑；示例跟着
-  `MT_REDIS_*` 这组环境变量走，所以 `scripts/redis-gate.sh` 在哪台服务端上跑，它就真跑在哪台）：
+- **不进框架的一键部署包**：本模块要的 Redis 服务端不在官网一键包里，要多实例共享得自己起一台。
+- 使用骨架（与 RS1 同源；仓内文档闸把它逐字抽出去真编译真跑，示例跟 `MT_REDIS_*` 这组环境变量走，
+  在哪台服务端上跑那道真机门，它就真跑在哪台）：
 
 ```moonbit
 async fn uses_redis_store() -> String raise {

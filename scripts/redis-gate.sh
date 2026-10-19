@@ -6,10 +6,10 @@
 # 这道门专治这一种绿：CI 与 gate.sh 都不需要服务端，只有这里是真跑。
 #
 # 用法（两台都跑过才算收口）：
-#   本机沙箱（Redis 8.0.5，零 root 起法见 hub docs/moon-token-design.md §15.25）：
+#   本机沙箱（新版 Redis；零 root 起法：redis-server --port 6379 --save '' --appendonly no）：
 #     MT_REDIS_HOST=127.0.0.1 bash scripts/redis-gate.sh
-#   开发库（Redis 5.0.4，我们一键包实际部署的那一版）：
-#     MT_REDIS_HOST=192.168.1.160 MT_REDIS_DB=15 MT_REDIS_PWD="$RD_PWD" bash scripts/redis-gate.sh
+#   老服务端（Redis 5.0.4，一键包实际部署的那一版；主机地址自己给）：
+#     MT_REDIS_HOST=<主机地址> MT_REDIS_DB=15 MT_REDIS_PWD="$RD_PWD" bash scripts/redis-gate.sh
 set -euo pipefail
 export MOON_HOME="${MOON_HOME:-$HOME/.moon}"
 cd "$(dirname "$0")/.."

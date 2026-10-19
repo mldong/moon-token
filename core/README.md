@@ -4,14 +4,19 @@ MoonBit 生态的**登录态 / 会话标准件**：DDD 分层、async-first 契�
 （只依赖官方 `moonbitlang/async`）。本包是**核心**——应用层用例、领域模型与裁决、路由守卫、
 领域事件、token 生成风格。
 
-存储契约与内存适配器在同家族的 [`mldong/moon-token-store`](https://mooncakes.io/docs/mldong/moon-token-store)
-（本包已依赖它，通常不需要单独 `moon add`）。
+存储契约与内存适配器在同家族的 [`mldong/moon-token-store`](https://mooncakes.io/docs/mldong/moon-token-store)。
+本包自己依赖它，但 **MoonBit 的传递依赖对调用方不自动可见**：只要你的代码写到 `@port`／`@mem`，
+下面那一行 `moon add` 就必须带上，漏了会在 `moon check` 报 `containing module is not imported`。
 
 ```bash
 moon update
 moon add mldong/moon-token
+moon add mldong/moon-token-store  # 引用 @port / @mem 就要显式装，别指望核心包替你带
 moon add moonbitlang/async      # async 运行时；库本身不依赖它，但调用方要
 ```
+
+`moon.pkg` 里按代码块用的别名引这几个包：`app`／`style`／`guard` 取自 `mldong/moon-token`，
+`port`／`memory`（别名常写作 `@mem`）取自 `mldong/moon-token-store`。
 
 ## 它解决什么
 
@@ -124,8 +129,9 @@ async test "被踢方拿到的是 KickedOut，不是笼统未登录" {
 ## 边界（v1）
 
 - **本模块只带内存适配器**：进程重启状态清零。持久化在同家族的 `mldong/moon-token-store-file`
-  （内存为主 + 写穿透，零 Redis、零 MySQL），框架适配在同家族的 `mldong/moon-token-moonback`；
-  Redis / SQL 是同一个端口上**预留的口子**，等第三方驱动库稳定再实现——业务代码与端口都不动。
+  （内存为主 + 写穿透，零 Redis、零 MySQL），跨进程跨实例共享在同家族的
+  `mldong/moon-token-store-redis`，框架适配在同家族的 `mldong/moon-token-moonback`；
+  SQL 后端仍是同一个端口上的口子，不在排期里——换哪一档后端，业务代码与端口都不动。
 - **熵源分档**：默认 `opaque_style()` 取平台熵，取不到即 `abort`，绝不静默回落到固定种子。
   `wasm-gc` 档无平台熵源，请改用 `opaque_style_with_seed` / `opaque_style_with`。
 - 随机流是 core 提供的 **ChaCha8（8 轮变体）**，本项目不宣称其等同 ChaCha20 强度。
@@ -136,6 +142,6 @@ async test "被踢方拿到的是 KickedOut，不是笼统未登录" {
 
 ## 许可与模块
 
-Apache-2.0。同家族四模块：`mldong/moon-token`（本包）、`mldong/moon-token-store`（契约与内存适配器）、
-`mldong/moon-token-store-file`（文件后端）、`mldong/moon-token-moonback`（moonback 适配层），
-同版本号、按拓扑序发布。
+Apache-2.0。同家族发布件：`mldong/moon-token`（本包）、`mldong/moon-token-store`（契约与内存适配器）、
+`mldong/moon-token-store-file`（文件后端）、`mldong/moon-token-store-redis`（Redis 后端）、
+`mldong/moon-token-moonback`（moonback 适配层），同版本号、按拓扑序发布。

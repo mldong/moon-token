@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 本地门禁：与 CI 的 verify job 同判据。断言四件事：零警告、用例条数=109、0 failed、文档与 README 真跑。
+# 本地门禁：与 CI 的 verify job 同判据。断言五件事：零警告、用例条数=109、0 failed、文档与 README 真跑、页面安装面自洽。
 set -euo pipefail
 export MOON_HOME="${MOON_HOME:-$HOME/.moon}"
 cd "$(dirname "$0")/.."
@@ -21,4 +21,7 @@ printf '%s' "$test_log" | grep -q "Total tests: 109" || { echo "GATE FAIL: 用�
 printf '%s' "$test_log" | grep -q "failed: 0" || { echo "GATE FAIL: 有失败用例" >&2; exit 1; }
 bash scripts/docs-check.sh
 bash scripts/readme-check.sh
-echo "GATE PASS: 零警告 + Total tests: 109 + 0 failed + 文档代码块与 README 对本地源码真跑"
+# 页面安装面（source 档）：每个已发布模块 README 自己给的 moon add 清单，必须够编译它自己的代码块。
+# docs-check 会自补全家族依赖，所以这道闸不能省——省了"页面少写一条 add"就永远不会红。
+PAGE_MODE=source bash scripts/page-install-check.sh
+echo "GATE PASS: 零警告 + Total tests: 109 + 0 failed + 文档代码块与 README 对本地源码真跑 + 页面安装面自洽"

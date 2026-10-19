@@ -247,8 +247,9 @@ test "线格式能扛住分隔符与中文" {
 
 ## 6. 换后端的最小清单（验收项，缺一条就不算实现完）
 
-已交付的两个后端可对照：`store/memory`（基准，纯内存）、`store-file/file`（第一个真后端，
-内存为主 + 写穿透，`docs/file-store.md` 讲它为什么这么写）。
+已交付的三个后端可对照：`store/memory`（基准，纯内存）、`store-file/file`（文件持久化，
+内存为主 + 写穿透，`docs/file-store.md` 讲它为什么这么写）、`store-redis/redis`（跨进程跨实例共享，
+形状与踩过的服务端版本边界写在 `store-redis/README.md`）。
 
 1. 实现八个 async 方法，抛错一律 `raise @port.Store(msg)`。
 2. `get` 的惰性过期按 §4 两档实现。

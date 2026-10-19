@@ -6,7 +6,9 @@
 实现的是 `mldong/moon-token-store` 里那个 `TokenStore` 端口，所以 `TokenAuth` 一行都不用改。
 
 ```bash
+moon update
 moon add mldong/moon-token-store-file
+moon add moonbitlang/async   # 下面这段是 async 用例，不装它在 moon check 阶段就红
 ```
 
 ## 用法
@@ -50,6 +52,7 @@ async test "文件后端就是同一个端口" {
 
 ## 许可与家族
 
-Apache-2.0。同家族四模块：`mldong/moon-token`（核心）、`mldong/moon-token-store`（契约与内存适配器）、
-本模块（文件后端）、`mldong/moon-token-moonback`（moonback 适配层）。版本号一致，
-按拓扑序发布（store 先，其余三个后）。
+Apache-2.0。同家族发布件：`mldong/moon-token`（核心）、`mldong/moon-token-store`（契约与内存适配器）、
+本模块（文件后端）、`mldong/moon-token-store-redis`（Redis 后端）、`mldong/moon-token-moonback`
+（moonback 适配层）。版本号一致，按拓扑序发布（store 先，core / store-file / store-redis 随后，
+moonback 最后）。

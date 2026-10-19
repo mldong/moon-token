@@ -12,9 +12,10 @@
 | — | 时钟槽 `set_clock` / `now_ms`（可注入，时效类用例靠它） |
 
 ```bash
-moon add mldong/moon-token          # 核心已依赖本包，通常无需单独加
-# 只想要契约/内存适配器（例如你在写自己的应用层）时：
-moon add mldong/moon-token-store
+moon update
+moon add mldong/moon-token-store    # 契约与内存适配器（本包）
+moon add mldong/moon-token          # 核心层的用例与守卫；引到它的包就得显式装一条
+moon add moonbitlang/async          # 下面的示例是 async 用例，不装它在 moon check 阶段就红
 ```
 
 ## 直接用内存适配器

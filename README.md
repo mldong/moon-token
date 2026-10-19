@@ -1,15 +1,15 @@
 # moon-token
 
 MoonBit 生态的**登录态 / 会话标准件**。DDD 分层、async-first 契约、零第三方运行时依赖
-（只依赖官方 `moonbitlang/async`），本地 `moon add` 即用，不需要任何外部服务。
+（核心与存储契约只依赖官方 `moonbitlang/async`，Redis 后端另引 `oboard/redis`），本地 `moon add` 即用，内存与文件后端不需要任何外部服务。
 
 English summary: a login-state and session toolkit for MoonBit — layered DDD (aggregates,
 pure domain policies, async storage port), pluggable storage, exact logout reasons
 (kicked / superseded / expired never collapse into "not logged in"), multi-realm sessions,
 a route-guard DSL, and domain events. backends are pluggable: the in-memory store ships in the
-contract module, and a file-backed store (no Redis, no MySQL) persists sessions across
-restarts; Redis and SQL drivers are reserved extension points on the same port, to be picked up
-once third-party drivers mature.
+contract module, a file-backed store (no Redis, no MySQL) persists sessions across
+restarts, and a Redis backend shares sessions across instances and processes; a SQL driver
+stays out of scope on the same port.
 
 ## 特性
 
@@ -22,7 +22,7 @@ once third-party drivers mature.
 | 两种踢人粒度 | `kickout` 按账号+设备，`kickout_token` 按一枚 token——管理端"在线用户"页点一行只撤那一行，同设备其它会话不动 |
 | 并发三态 | `Coexist`（默认共存）/ `Supersede`（顶人下线）/ `Shared`（同设备共用一个 token） |
 | 滑动续期 | `SlideOnAccess`（带节流窗，默认 60s）/ `IdleMark`（活跃标记） |
-| 可插拔存储 | async 仓储端口 + 意图补丁（`FamilyPatch`），换后端不改业务代码；已交付**内存**与**文件**两个后端 |
+| 可插拔存储 | async 仓储端口 + 意图补丁（`FamilyPatch`），换后端不改业务代码；已交付**内存**、**文件**与 **Redis** 三个后端 |
 | 全量轮转 | `rotate` 换新整对，旧 access 与旧 refresh 同时失效；**不校验绑定 access 是否存活** |
 | 守卫 DSL | 路径模式 + 断言闭包链，纯逻辑、不绑定任何 web 框架 |
 | web 适配 | `mldong/moon-token-moonback`：moonback 逐路由守卫、主体进请求上下文、失败只映射状态码 |
@@ -31,18 +31,22 @@ once third-party drivers mature.
 
 ## 安装
 
-四个已发布模块按需引（都发到 mooncakes.io，包页面即模块目录的 README）：
+已发布的模块按需引（都在 mooncakes.io，包页面即模块目录的 README；模块与代次清单现读各目录 `moon.mod`）：
 
 ```bash
 moon update
 moon add mldong/moon-token             # 核心：应用层用例、领域裁决、守卫、事件、令牌风格
-moon add mldong/moon-token-store       # 契约与内存适配器（核心包已依赖，通常无需单独加）
+moon add mldong/moon-token-store       # 契约与内存适配器：要用 @port / @mem 就得显式加这一条
 moon add mldong/moon-token-store-file  # 文件后端：内存为主 + 写穿透，重启不丢会话
+moon add mldong/moon-token-store-redis # Redis 后端：跨进程跨实例共享会话（另引 oboard/redis）
 moon add mldong/moon-token-moonback    # moonback 适配层：逐路由守卫、主体进请求上下文
 ```
 
+MoonBit 的传递依赖对调用方不自动可见：核心包虽然自己依赖 `moon-token-store`，
+只要你的代码写到 `@port`／`@mem`，就得把那一行 `moon add` 也带上（漏了会在
+`moon check` 阶段报 `containing module is not imported`）。
 要跑 async 用例或服务另需 `moon add moonbitlang/async`。
-包页面：https://mooncakes.io/docs/mldong/moon-token （其余三个同名前缀）。
+包页面：https://mooncakes.io/docs/mldong/moon-token （其余模块同名前缀）。
 
 工具链要求：**跟随官方最新稳定版**（本机代次用 `moon version --all` 现读；CI 每次装官方 latest，
 本库始终在最新工具链上开发与验证——不钉旧版本、也不靠降级依赖绕版本偏斜）。
@@ -56,7 +60,7 @@ moon add mldong/moon-token-moonback    # moonback 适配层：逐路由守卫、
 // port / memory 取自 mldong/moon-token-store；跑 async 用例另需
 // moon add moonbitlang/async
 
-// 1. 装一个存储（内存实现；Redis / SQL 后端是端口上预留的口子，等第三方驱动库稳定再实现）
+// 1. 装一个存储（内存实现；文件后端见 store-file，跨实例共享见 store-redis）
 let store = @mem.MemoryStore::new("user")
 
 // 2. 权限源由业务实现（端口是 async，查库不用绕路）
@@ -185,20 +189,23 @@ bash scripts/mw-smoke.sh                      # 另开终端：豁免/两腿/推
 
 ## 模块与文档在哪
 
-本仓一个 git 仓库、四个 MoonBit 模块，**发布到 mooncakes 的包根就是模块目录**，
-所以每个已发布模块自己带一份 README（mooncakes 页面渲染那份，不是本文件）：
+本仓一个 git 仓库、多个 MoonBit 模块（成员与代次现读 `moon.work` 与各目录 `moon.mod`），
+**发布到 mooncakes 的包根就是模块目录**，所以每个已发布模块自己带一份 README（mooncakes 页面渲染那份，不是本文件）：
 
 | 模块 | 目录 | 发布名 | 说明 |
 |---|---|---|---|
 | 核心 | `core/` | `mldong/moon-token` | 应用层用例、领域模型与裁决、守卫、事件、token 风格 → [模块 README](core/README.md) |
 | 存储契约 | `store/` | `mldong/moon-token-store` | `TokenStore` 端口、共享内核（值对象/键位/补丁/错误词汇/线格式）、内存适配器 → [模块 README](store/README.md) |
 | 文件后端 | `store-file/` | `mldong/moon-token-store-file` | 内存为主 + 写穿透的文件持久化 → [模块 README](store-file/README.md) |
+| Redis 后端 | `store-redis/` | `mldong/moon-token-store-redis` | 跨进程跨实例共享会话；族 CAS、Lua 取删、与内存版同语义的翻页 → [模块 README](store-redis/README.md) |
 | web 适配 | `moonback/` | `mldong/moon-token-moonback` | moonback 逐路由守卫、主体进请求上下文、状态码映射 → [模块 README](moonback/README.md) |
 | 示例 | `examples/` | 不发布 | 两个可运行服务：`cmd/main`（手写路由 + 13 步 curl 剧本）、`cmd/moonback-demo`（框架守卫 + 状态码矩阵） |
 
-`docs/` 那 18 篇**不在发布包里**（模块 zip 只含模块目录），所以四个模块 README 里的文档链接
-一律给 GitHub 绝对地址。这五处 README 与 `docs/*.md` 同受 `scripts/docs-check.sh` 管：
-里面的每个 `moonbit` 块都会被逐字灌进"只依赖注册表已发布件"的独立工程真编译真跑。
+`docs/` 那批文档**不在发布包里**（模块 zip 只含模块目录），所以各模块 README 里的文档链接
+一律给 GitHub 绝对地址。这些 README 与 `docs/*.md` 同受 `scripts/docs-check.sh` 管：
+里面的每个 `moonbit` 块都会被逐字灌进"只依赖注册表已发布件"的独立工程真编译真跑；
+`scripts/page-install-check.sh` 再按各模块 README **自己给的 `moon add` 清单**装一遍——
+少写一条依赖，页面就红，这条闸不自补依赖。
 
 ## 设计与规范
 
@@ -217,16 +224,16 @@ bash scripts/gate.sh     # 本地门禁：零警告 + 用例条数与矩阵一�
 | 检查 | `moon check --target wasm`——**零警告口径**，出现 `Warning` 即红 |
 | 构建 | `moon build`，wasm 与 native 双档 |
 | 测试 | `moon test`，wasm 与 native 双档，并**断言用例条数**（wasm-gc 档会静默丢弃 `async test` 还报 passed，所以条数是硬判据、不是顺带看一眼） |
-| 可复现 | README 那段最小用法 + `docs/` 全部代码块 + 四个模块 README，逐字灌进独立工程真编译真跑，同样判零警告 |
+| 可复现 | README 那段最小用法 + `docs/` 全部代码块 + 各模块 README，逐字灌进独立工程真编译真跑，同样判零警告；另有一道只按页面 `moon add` 清单装的安装面闸 |
 
 触发方式：推 `v*.*.*` tag ⇒ 检查通过就发布到 mooncakes；`workflow_dispatch` ⇒ 默认只检查，勾 `publish` 才发。
 发布之后还会**只依赖注册表已发布件**再跑一遍文档检查——那一步就是"用户今天照文档敲能不能跑"的证据。
 
 ## 已知限制
 
-- **存储交付了两档，都没做跨实例共享**。内存版重启即清零；文件版（`store-file`）在**同机同目录**内
-  一致。多实例共享会话要靠 Redis 后端，但那是端口上**预留的口子**、不是排期里的下一版：
-  等第三方 Redis / MySQL 库稳定后再实现（届时业务代码与适配接口一行都不用改）。
+- **存储交付了三档，共享边界各不相同**。内存版重启即清零；文件版（`store-file`）在**同机同目录**内
+  一致；Redis 版（`store-redis`）跨进程跨实例共享会话，代价是多一个第三方依赖（`oboard/redis`）
+  和一台要自己管的 Redis 服务端。SQL 后端仍只是端口上的口子，不在排期里。
 - **熵源分档**：默认 `opaque_style()` 取平台熵，取不到即 `abort`（绝不静默回落到固定种子）。
   `wasm-gc` 档无平台熵源，需改用 `opaque_style_with_seed` 或 `opaque_style_with` 显式注入；
   Windows native 目标需 MSVC 工具链（`rand_s`），Linux/CI 与 wasm 档不受影响。
@@ -239,6 +246,7 @@ bash scripts/gate.sh     # 本地门禁：零警告 + 用例条数与矩阵一�
 Apache-2.0，见 [LICENSE](LICENSE)。
 
 本项目未移植、未翻译、未复制任何第三方代码；发布包里不含 vendored 的第三方源
-（依赖只有官方 `moonbitlang/async` 与 `moonbitlang/moonback`，各自按其许可证条款正常引用），
-因此没有第三方许可证的继承义务。分层结构、存储端口形状、意图补丁枚举、错误词汇与接口命名都是本仓自持的；
+（依赖只有官方 `moonbitlang/async`、`moonbitlang/moonback`，以及 Redis 后端用的 `oboard/redis`，
+三者都是 Apache-2.0，各自按其许可证条款正常引用），因此没有第三方许可证的继承义务。
+分层结构、存储端口形状、意图补丁枚举、错误词汇与接口命名都是本仓自持的；
 每个默认值与判定口径"为什么这样定"记在 `docs/data-model.md` 的决策表里。

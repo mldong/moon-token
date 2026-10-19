@@ -6,7 +6,7 @@ name: publish
 # job 名保持 Check / Build / Test (wasm + native)，run log 里一眼能看得出来。
 
 # 一条流水做完两件事：verify 跑检查/构建/测试（参赛验收第 5 条：CI 必须覆盖这三件事，
-# native 档只在 CI 跑，本机不试），全绿之后 publish 才把四个模块发到 mooncakes。
+# native 档只在 CI 跑，本机不试），全绿之后 publish 才把五个发布件按拓扑序发到 mooncakes。
 # 10-02 之前这是两份 workflow（ci.yml + publish.yml）并行跑在同一枚 tag 上，
 # 发布只靠自己那道 "用例数 >= 61" 的兜底门防"带红发布"；合成一条之后 verify 是 publish 的
 # 硬前置（needs），那道兜底门就撤掉了，`moon check`/`moon test` 也不用在两处各跑一遍。
@@ -106,6 +106,13 @@ jobs:
           export MOON_HOME="$HOME/.moon"
           bash scripts/docs-check.sh
 
+      - name: Page install-surface check (each module's own moon add list vs its own snippets)
+        env:
+          PAGE_MODE: source
+        run: |
+          export MOON_HOME="$HOME/.moon"
+          bash scripts/page-install-check.sh
+
       - name: Assert zero warnings
         run: |
           moon check --target wasm --no-render 2>&1 | tee check.txt
@@ -186,11 +193,13 @@ jobs:
       - name: Publish moonback
         run: bash .github/scripts/publish-if-absent.sh moonback mldong/moon-token-moonback
 
-      # 用户那条腿：这两支脚本用不带版本的 moon add，解析到的就是刚发上去的那一代。
+      # 用户那条腿：这三支脚本都用不带版本的 moon add，解析到的就是刚发上去的那一代。
       # 红即"传播没到位或包体坏了"，不是"代码坏了"（代码在 verify 已经判过）。
+      # page-install-check 走 registry 档：真按每个页面自己给的清单装，再拿页面的代码块编译。
       - name: Verify consumer leg against just-published modules
         run: |
           export MOON_HOME="$HOME/.moon"
           moon update
           bash scripts/readme-check.sh
           bash scripts/docs-check.sh
+          bash scripts/page-install-check.sh
