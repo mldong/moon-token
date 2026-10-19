@@ -186,13 +186,13 @@ pub(all) enum GuardOutcome {
 }
 
 ///|
-/// 守卫裁决：不在保护面内 ⇒ `Ok(Exempt)`（放行且无主体）；在 ⇒ 跑登录校验 + 追加断言，
-/// 成功给 `Ok(Passed(login_id))`，失败给 `Err`。
+/// 守卫裁决：不在保护面内 ⇒ `Exempt`（放行且无主体）；在 ⇒ 跑登录校验 + 追加断言，
+/// 给出 `Passed(login_id)`；失败按 `@port.TokenError` 抛出（精确原因不塌成"未登录"）。
 pub async fn[S : @port.TokenStore, P] run_guard(
   auth : @app.TokenAuth[S, P],
   route_guard : RouteGuard,
   request : RequestFns,
-) -> Result[GuardOutcome, @port.TokenError] {
+) -> GuardOutcome raise @port.TokenError {
   let path = (request.path)()
   let mut needs_auth = false
   for rule in route_guard.rules {
@@ -207,17 +207,13 @@ pub async fn[S : @port.TokenStore, P] run_guard(
     }
   }
   if !needs_auth {
-    Ok(Exempt)
+    Exempt
   } else {
     let token = extract_token(auth, request)
-    try {
-      let login_id = auth.check_login(token)
-      for check in route_guard.checks {
-        (check.run)(login_id, token)
-      }
-      Ok(Passed(login_id))
-    } catch {
-      err => Err(err)
+    let login_id = auth.check_login(token)
+    for check in route_guard.checks {
+      (check.run)(login_id, token)
     }
+    Passed(login_id)
   }
 }

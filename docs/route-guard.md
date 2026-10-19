@@ -60,11 +60,19 @@ fn request(path : String, token : String) -> @guard.RequestFns {
 ## 1. 三条规则，一次判定
 
 ```moonbit
-fn verdict(v : Result[@guard.GuardOutcome, @port.TokenError]) -> String {
-  match v {
-    Ok(@guard.Exempt) => "exempt"
-    Ok(@guard.Passed(login_id)) => login_id
-    Err(err) => err.message()
+/// 守卫现在失败是抛出，所以"读数"要在接住之后取：放行给 login_id 或 "exempt"，拦下给原因。
+async fn verdict(
+  a : @app.TokenAuth[@mem.MemoryStore, P],
+  g : @guard.RouteGuard,
+  r : @guard.RequestFns,
+) -> String {
+  try {
+    match @guard.run_guard(a, g, r) {
+      @guard.Exempt => "exempt"
+      @guard.Passed(login_id) => login_id
+    }
+  } catch {
+    err => err.message()
   }
 }
 
@@ -74,13 +82,13 @@ async fn three_rules() -> Array[String] raise {
   let g = site_guard()
   [
     // 保护面内 + 有 token ⇒ Passed(login_id)
-    verdict(@guard.run_guard(a, g, request("/api/user/info", t))),
-    // 保护面内 + 无 token ⇒ AbsentToken
-    verdict(@guard.run_guard(a, g, request("/api/user/info", ""))),
+    verdict(a, g, request("/api/user/info", t)),
+    // 保护面内 + 无 token ⇒ 抛 AbsentToken
+    verdict(a, g, request("/api/user/info", "")),
     // 豁免臂优先级最高：即便在 /api/** 下也不问身份 ⇒ Exempt（没有主体）
-    verdict(@guard.run_guard(a, g, request("/api/public/ping", ""))),
+    verdict(a, g, request("/api/public/ping", "")),
     // 压根不在保护面 ⇒ 同样 Exempt
-    verdict(@guard.run_guard(a, g, request("/health", ""))),
+    verdict(a, g, request("/health", "")),
   ]
 }
 
@@ -93,7 +101,7 @@ async test "先匹配、后豁免、不在面内一律放行" {
 }
 ```
 
-**两种放行由类型区分，不靠"值里装的是什么"猜**：`run_guard` 的 `Ok` 装的是 `GuardOutcome`。
+**两种放行由类型区分，不靠"值里装的是什么"猜**：`run_guard` 过了就给 `GuardOutcome`，没过直接抛 `@port.TokenError`。
 
 | 情况 | 结果 | handler 能拿到什么 |
 |---|---|---|
@@ -153,8 +161,8 @@ async fn bearer_style() -> (String, String) raise {
     header: fn(name) { if name == "Authorization" { Some(t) } else { None } },
   }
   (
-    verdict(@guard.run_guard(a, g, ok)),
-    verdict(@guard.run_guard(a, g, bad)),
+    verdict(a, g, ok),
+    verdict(a, g, bad),
   )
 }
 
@@ -190,7 +198,7 @@ async fn extra_check() -> String raise {
       }
     },
   )
-  verdict(@guard.run_guard(a, g, request("/api/x", t)))
+  verdict(a, g, request("/api/x", t))
 }
 
 async test "同步断言通过则照旧放行" {
@@ -206,12 +214,15 @@ async test "同步断言通过则照旧放行" {
 `examples/cmd/main` 里那十行就是完整接法：
 
 ```text
-match @guard.run_guard(auth, route_guard, {
+let outcome = @guard.run_guard(auth, route_guard, {
   path: fn() { req.path },
   header: fn(name) { header_value(req, name) },
-}) {
-  Ok(login_id) => 继续处理这个请求
-  Err(err)     => 回 {"code":99999999,"msg":err.message(),...}
+}) catch {
+  err => 回 {"code":99999999,"msg":err.message(),...}，这个请求到此为止
+}
+match outcome {
+  @guard.Exempt           => 放行，但**没有主体**，别编一个 login_id
+  @guard.Passed(login_id) => 继续处理这个请求
 }
 ```
 

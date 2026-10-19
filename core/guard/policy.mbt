@@ -264,33 +264,31 @@ pub fn RoutePolicy::exceptions(self : RoutePolicy, paths : Array[String]) -> Arr
 /// 超管判定读 `P:` 快照里的 `super_admin`（数由业务在 `is_super_admin` 里给），开关是
 /// `TokenConfig::super_bypass`。**调用方不再传 `is_super_admin`**：那是业务事实，
 /// 库里既拿不到也不该每请求回业务库问一次。
-/// 返回复用 `GuardOutcome`：豁免 ⇒ `Exempt`（没有主体），其余 ⇒ `Passed(login_id)`。
+/// 返回复用 `GuardOutcome`：豁免 ⇒ `Exempt`（没有主体），其余 ⇒ `Passed(login_id)`；
+/// 失败按 `@port.TokenError` 抛出。
 pub async fn[S : @port.TokenStore, P : @port.PermissionProvider] check_route(
   auth : @app.TokenAuth[S, P],
   route_policy : RoutePolicy,
   request : RequestFns,
-) -> Result[GuardOutcome, @port.TokenError] {
+) -> GuardOutcome raise @port.TokenError {
   let path = (request.path)()
   let access = route_policy.resolve(path)
   match access {
-    Public => Ok(Exempt)
-    _ =>
-      try {
-        let token = extract_token(auth, request)
-        let login_id = match access {
-          Guarded(rule) =>
-            auth.check_access(
-              token,
-              rule.perms,
-              rule.perm_mode,
-              rule.roles,
-              rule.role_mode,
-            )
-          _ => auth.check_login(token)
-        }
-        Ok(Passed(login_id))
-      } catch {
-        err => Err(err)
+    Public => Exempt
+    _ => {
+      let token = extract_token(auth, request)
+      let login_id = match access {
+        Guarded(rule) =>
+          auth.check_access(
+            token,
+            rule.perms,
+            rule.perm_mode,
+            rule.roles,
+            rule.role_mode,
+          )
+        _ => auth.check_login(token)
       }
+      Passed(login_id)
+    }
   }
 }

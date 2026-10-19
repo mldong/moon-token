@@ -82,14 +82,22 @@ fn req(path : String, token : String?) -> @guard.RequestFns {
 }
 
 /// 把结果压成一个整数：-100 豁免、-1 放行、其余是错误码
-fn code_of(v : Result[@guard.GuardOutcome, @port.TokenError]) -> Int {
-  match v {
-    Ok(@guard.Exempt) => -100
-    Ok(@guard.Passed(_)) => -1
-    Err(@port.NotPermission(_)) => 100
-    Err(@port.NotRole(_)) => 101
-    Err(@port.NotLogin(_)) => 401
-    Err(_) => 900
+/// `check_route` 失败是抛出，所以读数要在接住之后取：豁免 -100、放行 -1，其余按档位给状态码素材。
+async fn code_of(
+  auth : @app.TokenAuth[@mem.MemoryStore, View],
+  policy : @guard.RoutePolicy,
+  r : @guard.RequestFns,
+) -> Int {
+  try {
+    match @guard.check_route(auth, policy, r) {
+      @guard.Exempt => -100
+      @guard.Passed(_) => -1
+    }
+  } catch {
+    @port.NotPermission(_) => 100
+    @port.NotRole(_) => 101
+    @port.NotLogin(_) => 401
+    _ => 900
   }
 }
 
@@ -98,23 +106,14 @@ async fn by_convention() -> Array[Int] raise {
   let policy = @guard.RoutePolicy::new().exempt("/api/login")
   let t = auth.login("u1", device="pc").token
   [
-    // ① 豁免：完全放行，且**没有主体**（返回 Exempt 而不是 Passed）
-    code_of(@guard.check_route(auth, policy, req("/api/login", None))),
+    // ① 豁免：完全放行，且**没有主体**（给 Exempt 而不是 Passed）
+    code_of(auth, policy, req("/api/login", None)),
     // ③ 推导：/api/orders/page ⇒ api:orders:page，视图里有 ⇒ 放行
-    code_of(@guard.check_route(
-      auth,
-      policy,
-      req("/api/orders/page", Some(t)))),
+    code_of(auth, policy, req("/api/orders/page", Some(t))),
     // ③ 推出来的码查不到 ⇒ NotPermission（不是 NotLogin，前端据此决定要不要跳登录）
-    code_of(@guard.check_route(
-      auth,
-      policy,
-      req("/api/orders/save", Some(t)))),
-    // 保护端点不带 token ⇒ 登录先失败
-    code_of(@guard.check_route(
-      auth,
-      policy,
-      req("/api/orders/page", None))),
+    code_of(auth, policy, req("/api/orders/save", Some(t))),
+    // 保护端点不带 token ⇒ 登录先失败（抛 NotLogin）
+    code_of(auth, policy, req("/api/orders/page", None)),
   ]
 }
 
@@ -144,11 +143,8 @@ async fn overrides() -> Array[Int] raise {
     // 换码：路径叫 start，权限码却是 stop
     .rule(@guard.RouteRule::make("/api/jobs/start", ["api:jobs:stop"]))
   [
-    code_of(@guard.check_route(
-      auth,
-      policy,
-      req("/api/orders/lock", Some(t)))),
-    code_of(@guard.check_route(auth, policy, req("/api/jobs/start", Some(t)))),
+    code_of(auth, policy, req("/api/orders/lock", Some(t))),
+    code_of(auth, policy, req("/api/jobs/start", Some(t))),
     policy.rule_count(),
   ]
 }
@@ -177,11 +173,8 @@ async fn perms_and_roles() -> Array[Int] raise {
   let both = view_auth(["api:orders:page"], ["ops"])
   let t2 = both.login("u1", device="pc").token
   [
-    code_of(@guard.check_route(
-      only_perm,
-      policy,
-      req("/api/orders/page", Some(t1)))),
-    code_of(@guard.check_route(both, policy, req("/api/orders/page", Some(t2)))),
+    code_of(only_perm, policy, req("/api/orders/page", Some(t1))),
+    code_of(both, policy, req("/api/orders/page", Some(t2))),
   ]
 }
 
@@ -276,7 +269,7 @@ test "换掉 deriver，整套判定跟着变" {
 
 配置文件读取消定在**应用侧**（本库不引 fs/json，保持端口零依赖）：把配置解析成
 `RoutePolicy` 的值传进来即可。任何 web 框架的适配层要做的都只是
-"取 token、取 path、把 `check_route` 的结果翻成 401/403 响应"。
+"取 token、取 path、把 `check_route` 抛出的原因翻成 401/403 响应"。
 已经按这句话做好的一份是 `mldong/moon-token-moonback`，见 [moonback 集成](moonback-integration.md)。
 
 ## 7. 边界

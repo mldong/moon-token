@@ -156,10 +156,17 @@ async fn handle(
     path: fn() { path },
     header: fn(name) { header_value(req, name) },
   }
-  match @guard.run_guard(auth, route_guard, request_fns) {
-    // 豁免面：放行但没有主体——绝不能把路径当 login_id 往下传
-    Ok(@guard.Exempt) => reply(conn, envelope(0, "ok", text("public pass")))
-    Ok(@guard.Passed(login_id)) =>
+  let outcome = @guard.run_guard(auth, route_guard, request_fns) catch {
+    // 未登录/无权：抛出直接落成信封，原因原样带出，不塌成"未登录"四个字
+    err => {
+      reply(conn, envelope(99999999, err.message(), "null"))
+      return
+    }
+  }
+  // 守卫已过：豁免面没有主体，放行面带 login_id
+  match outcome {
+    @guard.Exempt => reply(conn, envelope(0, "ok", text("public pass")))
+    @guard.Passed(login_id) =>
       if path == "/logout" && meth == "POST" {
         auth.logout(header_or_empty(req, "authorization"))
         reply(conn, envelope(0, "ok", text("logged out " + login_id)))
@@ -185,7 +192,6 @@ async fn handle(
       } else {
         reply(conn, envelope(0, "ok", text("hello " + login_id)))
       }
-    Err(err) => reply(conn, envelope(99999999, err.message(), "null"))
   }
 }
 

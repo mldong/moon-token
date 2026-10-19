@@ -119,15 +119,25 @@ let login_id = auth.check_login(result.token)   // "u1"
 auth.kickout("u1", device="pc") |> ignore
 //   -> NotLogin(KickedOut)，而不是笼统的"未登录"
 
-// 6. 守卫：保护面 + 豁免，然后编排一次请求（不通过就抛，原因精确到档）
+// 6. 守卫：保护面 + 豁免，然后编排一次请求（不过就直接抛，原因精确到档）
 let route_guard = @guard.RouteGuard::new()
   .match_pattern("/api/**")
   .not_match_pattern("/api/public/**")
 
-@guard.run_guard(auth, route_guard, {
+let outcome = @guard.run_guard(auth, route_guard, {
   path: fn() { "/api/user/info" },
   header: fn(name) { if name == "Authorization" { Some(result.token) } else { None } },
-}) |> ignore
+}) catch {
+  // 真实服务在这里回 401/403；示例只把原因打出来，好让这段能一路跑完
+  err => {
+    println("拦下：" + err.message())
+    @guard.Exempt
+  }
+}
+match outcome {
+  @guard.Exempt => println("豁免面内：放行且没有主体")
+  @guard.Passed(login_id) => println("放行：" + login_id)
+}
 ```
 
 ## 完整可运行示例
