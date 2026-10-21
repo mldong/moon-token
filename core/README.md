@@ -12,7 +12,7 @@ MoonBit 生态的**登录态 / 会话标准件**：DDD 分层、async-first 契�
 moon update
 moon add mldong/moon-token
 moon add mldong/moon-token-store  # 引用 @port / @mem 就要显式装，别指望核心包替你带
-moon add moonbitlang/async      # async 运行时；库本身不依赖它，但调用方要
+moon add moonbitlang/async      # 核心包已依赖它；你的包要用 async test/fn 仍需显式装并 import
 ```
 
 `moon.pkg` 照这段写（下面的五分钟跑通用到全部五个 import；`async` 不加别名也行）：
@@ -142,10 +142,16 @@ async test "被踢方拿到的是 KickedOut，不是笼统未登录" {
 
 ## 边界（v1）
 
-- **本模块只带内存适配器**：进程重启状态清零。持久化在同家族的 `mldong/moon-token-store-file`
-  （内存为主 + 写穿透，零 Redis、零 MySQL），跨进程跨实例共享在同家族的
-  `mldong/moon-token-store-redis`，框架适配在同家族的 `mldong/moon-token-moonback`；
-  SQL 后端仍是同一个端口上的口子，不在排期里——换哪一档后端，业务代码与端口都不动。
+- **本模块不带存储实现**：内存适配器在同家族的 `mldong/moon-token-store`
+  （`moon add mldong/moon-token-store`），进程重启状态清零。持久化在同家族的
+  [`mldong/moon-token-store-file`](https://mooncakes.io/docs/mldong/moon-token-store-file)
+  （`moon add mldong/moon-token-store-file`，内存为主 + 写穿透，零 Redis、零 MySQL），
+  跨进程跨实例共享在
+  [`mldong/moon-token-store-redis`](https://mooncakes.io/docs/mldong/moon-token-store-redis)
+  （`moon add mldong/moon-token-store-redis`），框架适配在
+  [`mldong/moon-token-moonback`](https://mooncakes.io/docs/mldong/moon-token-moonback)
+  （`moon add mldong/moon-token-moonback`）；SQL 后端仍是同一个端口上的口子，暂不排期——
+  换哪一档后端，业务代码与端口都不动。
 - **熵源分档**：默认 `opaque_style()` 取平台熵，取不到即 `abort`，绝不静默回落到固定种子。
   `wasm-gc` 档无平台熵源，请改用 `opaque_style_with_seed` / `opaque_style_with`。
 - 随机流是 core 提供的 **ChaCha8（8 轮变体）**，本项目不宣称其等同 ChaCha20 强度。
