@@ -46,6 +46,32 @@ if [ ${#files[@]} -eq 0 ]; then
   exit 1
 fi
 
+# 表格完整性（先于编译跑）：表行之间夹一个空行，GFM 就把这张表断成段落——渲染出来是"文档还在、
+# 表没了"。10-21 在 docs/data-model.md 上连中四次（8.13 之后整片掉出表外），故上闸。
+# 判据只认"上一行是表行、下一行是表行、而下一行不是新表的表头（其后没有 |---| 分隔行）"，
+# 这样两张相邻的真表不会被误报。
+tb_bad=0
+for f in "${files[@]}" README.md; do
+  [ -f "$f" ] || continue
+  hits=$(awk -v F="$f" '
+    { L[NR] = $0 }
+    function isrow(s) { return s ~ /^[ \t]*\|/ }
+    function issep(s) { return s ~ /^[ \t]*\|?[ \t:|-]*$/ && s ~ /--/ }
+    END {
+      for (i = 2; i < NR; i++)
+        if (L[i] ~ /^[ \t]*$/ && isrow(L[i-1]) && isrow(L[i+1]) && !issep(L[i+2]))
+          print F ":" i
+    }' "$f")
+  if [ -n "$hits" ]; then
+    tb_bad=1
+    printf '%s\n' "$hits" | sed 's/$/  ← 表格行之间夹了空行/'
+  fi
+done
+if [ "$tb_bad" != 0 ]; then
+  echo "DOCS CHECK FAIL: 表格被空行切断（把夹在表行中间的空行删掉，让行连起来）" >&2
+  exit 1
+fi
+
 check_pkg() {
   # $1=运行目录 $2=包选择子（registry 模式留空＝跑当前模块唯一的包；
   #    source 模式给相对目录，因为工作区里还挂着 store/core，不加选择子会把库的 61 条一起跑，
