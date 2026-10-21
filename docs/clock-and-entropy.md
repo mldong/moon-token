@@ -191,7 +191,8 @@ test "opaque_style_with：宿主给 32 字节，两次签发不同" {
 
 但**不建议把它引进 core/store**，三条理由：
 
-1. 破 v1 红线"零第三方运行时依赖"（目前只依赖官方 `moonbitlang/async`）。
+1. 破 v1 红线"**核心链**零第三方运行时依赖"——`core`／`store`／`store-file` 只依赖官方 `moonbitlang/async`。
+   （`store-redis` 是这条红线之外的一件：它按存储端口另引第三方 RESP 客户端，用不用由调用方选。）
 2. `Duration` 是**契约的一部分**：`TokenConfig` 八个字段与 `TokenStore` 的签名都在用它。
    换成 `x/time.Duration` 会把这个依赖传染给 v2 的每一个后端实现。
 3. `x/time` 的 `Duration::of(hours?, minutes?, seconds?, nanoseconds?)` **没有毫秒构造器**，
