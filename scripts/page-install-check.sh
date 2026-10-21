@@ -29,9 +29,12 @@ for pair in "${PAIRS[@]}"; do
 
   # 页面给的 moon add 清单：取所有**非 moonbit** 围栏里的 `moon add` 行，抽全部 <org>/<mod>
   # （清单既可能写 ```bash 也可能写 ```text，还可能一行并列好几件；```moonbit 里那些是注释，不算）
+  # 注释里可能出现 a/b 形状（如 "async test/fn"）：先把 `#` 之后剥掉，别把说明文字当包名。
+  # 10-22 0.1.15 的消费者腿就是被这句注释误伤：moon add test/fn 装不到。
   s_add=$(awk '/^```/{ if (inb) { inb = 0 } else { inb = 1; lang = $0 } ; next }
                 inb && lang !~ /moonbit/ { print }' "$readme" \
-    | grep -E '^[[:space:]]*moon add' | grep -oE '[a-z0-9_-]+/[a-z0-9_-]+' | sort -u || true)
+    | grep -E '^[[:space:]]*moon add' | sed -E 's/[[:space:]]+#.*$//' \
+    | grep -oE '[a-z0-9_-]+/[a-z0-9_-]+' | sort -u || true)
 
   if [ -z "$s_add" ]; then
     echo "FAIL $self: 页面没给任何 \`moon add\` 清单（新用户照页面装不起来）"
