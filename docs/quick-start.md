@@ -27,6 +27,9 @@ import {
 最后一行别省：`moon add` 只把 `moonbitlang/async` 写进 `moon.mod`，包里要用 `async test`／
 `async fn` 还得在 `moon.pkg` 里 import 它，否则 `moon check` 直接红。
 
+代码放模块的普通源文件（如 `src/*.mbt`）即可。若整个包只有 `*_test.mbt`，`moon.pkg` 的 import 块
+要写成 `} for "test"`——否则那些 import 对包本身算未使用，会报一片 `unused_package`。
+
 要求 MoonBit 工具链为当前稳定版（`moon version --all` 查看）。本库在 `preferred_target = "wasm"`
 下开发与测试；`native` 档由 CI 的 ubuntu job 裁决。
 

@@ -23,7 +23,9 @@ MoonBit 生态的**登录态 / 会话标准件**。DDD 分层、async-first 契�
 
 ## 安装
 
-已发布的模块按需引（都在 mooncakes.io，包页面即模块目录的 README；模块与代次清单现读各目录 `moon.mod`）：
+已发布的模块按需引（都在 mooncakes.io，包页面即模块目录的 README；模块与代次清单现读各目录 `moon.mod`）。
+下面的命令是在**你的项目目录**里执行的；在本仓里不要 `moon add`（根目录是 workspace，会报
+`cannot infer a target module`），源码开发与测试直接 `bash scripts/gate.sh`（需要 bash 与 python）：
 
 ```bash
 moon update
@@ -243,6 +245,10 @@ bash scripts/gate.sh     # 本地门禁：零警告 + 用例条数与矩阵一�
 
 触发方式：推 `v*.*.*` tag ⇒ 检查通过就发布到 mooncakes；`workflow_dispatch` ⇒ 默认只检查，勾 `publish` 才发。
 发布之后还会**只依赖注册表已发布件**再跑一遍文档检查——那一步就是"用户今天照文档敲能不能跑"的证据。
+
+没有 Redis 服务端时，`moon test` 里的 RS7/RS8 会打印 SKIP 并计入 passed；这两条要真跑用
+`MT_REDIS_HOST=<host> MT_REDIS_DB=<db> MT_REDIS_PWD=<pwd> bash scripts/redis-gate.sh`
+（断言 `SKIP RS` 零命中）。
 
 ## 已知限制
 
