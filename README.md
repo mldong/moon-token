@@ -46,6 +46,20 @@ MoonBit 的传递依赖对调用方不自动可见：核心包虽然自己依赖
 只要你的代码写到 `@port`／`@mem`，就得把那一行 `moon add` 也带上（漏了会在
 `moon check` 阶段报 `containing module is not imported`）。
 要跑 async 用例或服务另需 `moon add moonbitlang/async`。
+`moon.pkg` 照这段写（最小用法用到全部五个 import；`async` 不加别名也行）：
+
+```text
+import {
+  "mldong/moon-token/app" @app,
+  "mldong/moon-token/style" @style,
+  "mldong/moon-token-store/port" @port,
+  "mldong/moon-token-store/memory" @mem,
+  "moonbitlang/async",
+}
+```
+
+最后一行别省：`moon add` 只把它写进 `moon.mod`，包里要用 `async test`／`async fn`
+还得在 `moon.pkg` 里 import 它；要用路由守卫再加 `"mldong/moon-token/guard" @guard`。
 包页面：https://mooncakes.io/docs/mldong/moon-token （其余模块同名前缀）。
 
 工具链要求：**跟随官方最新稳定版**（本机代次用 `moon version --all` 现读；CI 每次装官方 latest，
@@ -56,9 +70,8 @@ MoonBit 的传递依赖对调用方不自动可见：核心包虽然自己依赖
 ## 最小用法
 
 ```moonbit
-// 包别名（moon.pkg）：app / style / guard 取自 mldong/moon-token，
-// port / memory 取自 mldong/moon-token-store；跑 async 用例另需
-// moon add moonbitlang/async
+// 包别名（moon.pkg）：完整字面形状见上节「安装」；跑 async 用例另需
+// moon add moonbitlang/async，并把它 import 进 moon.pkg（见上节）
 
 // 1. 装一个存储（内存实现；文件后端见 store-file，跨实例共享见 store-redis）
 let store = @mem.MemoryStore::new("user")

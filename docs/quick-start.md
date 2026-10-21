@@ -8,10 +8,24 @@
 ```bash
 moon update
 moon add mldong/moon-token
+moon add mldong/moon-token-store  # 引用 @port / @mem 就要显式装：传递依赖对调用方不自动可见
 moon add moonbitlang/async      # async 运行时；库本身不依赖它，但你的调用方要
 ```
 
-内存适配器在 `mldong/moon-token-store` 里，核心包已依赖它，通常不用单独 `moon add`。
+本页代码块用到的包都来自上面前两条 `moon add`；`moon.pkg` 照这段写（`async` 不加别名也行）：
+
+```text
+import {
+  "mldong/moon-token/app" @app,
+  "mldong/moon-token/style" @style,
+  "mldong/moon-token-store/port" @port,
+  "mldong/moon-token-store/memory" @mem,
+  "moonbitlang/async",
+}
+```
+
+最后一行别省：`moon add` 只把 `moonbitlang/async` 写进 `moon.mod`，包里要用 `async test`／
+`async fn` 还得在 `moon.pkg` 里 import 它，否则 `moon check` 直接红。
 
 要求 MoonBit 工具链为当前稳定版（`moon version --all` 查看）。本库在 `preferred_target = "wasm"`
 下开发与测试；`native` 档由 CI 的 ubuntu job 裁决。

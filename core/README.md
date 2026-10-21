@@ -15,8 +15,22 @@ moon add mldong/moon-token-store  # 引用 @port / @mem 就要显式装，别指
 moon add moonbitlang/async      # async 运行时；库本身不依赖它，但调用方要
 ```
 
-`moon.pkg` 里按代码块用的别名引这几个包：`app`／`style`／`guard` 取自 `mldong/moon-token`，
-`port`／`memory`（别名常写作 `@mem`）取自 `mldong/moon-token-store`。
+`moon.pkg` 照这段写（下面的五分钟跑通用到全部五个 import；`async` 不加别名也行）：
+
+```text
+import {
+  "mldong/moon-token/app" @app,
+  "mldong/moon-token/style" @style,
+  "mldong/moon-token-store/port" @port,
+  "mldong/moon-token-store/memory" @mem,
+  "moonbitlang/async",
+}
+```
+
+最后一行别省：`moon add` 只把 `moonbitlang/async` 写进 `moon.mod`，包里要用 `async test`
+还得在 `moon.pkg` 里 import 它——漏了会报
+`Cannot use 'async test': package moonbitlang/async is not imported`。
+要用路由守卫就再加一行 `"mldong/moon-token/guard" @guard`。
 
 ## 它解决什么
 

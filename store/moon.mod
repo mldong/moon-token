@@ -1,6 +1,6 @@
 name = "mldong/moon-token-store"
 
-version = "0.1.13"
+version = "0.1.14"
 
 license = "Apache-2.0"
 
