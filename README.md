@@ -246,7 +246,7 @@ bash scripts/gate.sh     # 本地门禁：零警告 + 用例条数与矩阵一�
 触发方式：推 `v*.*.*` tag ⇒ 检查通过就发布到 mooncakes；`workflow_dispatch` ⇒ 默认只检查，勾 `publish` 才发。
 发布之后还会**只依赖注册表已发布件**再跑一遍文档检查——那一步就是"用户今天照文档敲能不能跑"的证据。
 
-没有 Redis 服务端时，`moon test` 里的 RS7/RS8 会打印 SKIP 并计入 passed；这两条要真跑用
+没有 Redis 服务端时，`moon test` 里的 RS1–RS8 共 8 条会打印 SKIP 并计入 passed；要真跑用
 `MT_REDIS_HOST=<host> MT_REDIS_DB=<db> MT_REDIS_PWD=<pwd> bash scripts/redis-gate.sh`
 （断言 `SKIP RS` 零命中）。
 
