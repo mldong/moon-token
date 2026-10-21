@@ -3,14 +3,6 @@
 MoonBit 生态的**登录态 / 会话标准件**。DDD 分层、async-first 契约、零第三方运行时依赖
 （核心与存储契约只依赖官方 `moonbitlang/async`，Redis 后端另引 `oboard/redis`），本地 `moon add` 即用，内存与文件后端不需要任何外部服务。
 
-English summary: a login-state and session toolkit for MoonBit — layered DDD (aggregates,
-pure domain policies, async storage port), pluggable storage, exact logout reasons
-(kicked / superseded / expired never collapse into "not logged in"), multi-realm sessions,
-a route-guard DSL, and domain events. backends are pluggable: the in-memory store ships in the
-contract module, a file-backed store (no Redis, no MySQL) persists sessions across
-restarts, and a Redis backend shares sessions across instances and processes; a SQL driver
-stays out of scope on the same port.
-
 ## 特性
 
 | 能力 | 说明 |
