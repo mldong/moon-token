@@ -182,9 +182,10 @@ async test "两个 realm 各自独立：跨体系不认账" {
 **Redis 后端已交付**：`store-redis`（`Z` 索引 + Lua 原子 `get_and_del`）走的就是这份数据模型，
 第三方驱动 `oboard/redis` 成熟到能在 wasm 与 native 两个目标上跑通并保持版本线同步，就接了。
 
-**SQL 仍是端口上的口子，不在当前排期里。** 事务型 SQL 后端（MySQL 8 那条 `get_and_del` 得走事务）
-的判据也一样具体：能否在 wasm 与 native 两个目标上都跑通并保持版本线同步。第三方成熟之前先自己搓一层
-客户端，等于把别人正在收敛的接口焊进我们的依赖面，不值。
+**SQL 仍是端口上的口子，暂时不排期——这是取舍，不是没得选。** 事务型 SQL 后端（MySQL 8 那条
+`get_and_del` 得走事务）在 wasm 与 native 两个目标上跑通并保持版本线同步，现有第三方驱动已经够用
+（同一生态的 jeeflow-moon / mldong-moon 就在用）。不做的原因更简单：内存、文件、Redis 三档已经覆盖
+大多数部署场景，先把这三档打磨稳，比再维护一套 SQL 物理映射更值。
 
 口子本身已经留好：`TokenStore` 那八个方法与意图补丁不随后端变，`data-model.md` §6 已经把
 Redis 与 SQL 两套物理映射（含 "`T:` 的 TTL 要设到 `expire_at + kick_grace`" 这类会静默掉原因的坑）钉死，

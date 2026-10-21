@@ -254,7 +254,8 @@ bash scripts/gate.sh     # 本地门禁：零警告 + 用例条数与矩阵一�
 
 - **存储交付了三档，共享边界各不相同**。内存版重启即清零；文件版（`store-file`）在**同机同目录**内
   一致；Redis 版（`store-redis`）跨进程跨实例共享会话，代价是多一个第三方依赖（`oboard/redis`）
-  和一台要自己管的 Redis 服务端。SQL 后端仍只是端口上的口子，不在排期里。
+  和一台要自己管的 Redis 服务端。SQL 后端仍只是端口上的口子，暂不排期（第三方驱动已经够用，
+  先把手头三档打磨稳）。
 - **熵源分档**：默认 `opaque_style()` 取平台熵，取不到即 `abort`（绝不静默回落到固定种子）。
   `wasm-gc` 档无平台熵源，需改用 `opaque_style_with_seed` 或 `opaque_style_with` 显式注入；
   Windows native 目标需 MSVC 工具链（`rand_s`），Linux/CI 与 wasm 档不受影响。
