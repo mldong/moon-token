@@ -204,6 +204,7 @@ bash scripts/mw-smoke.sh                      # 另开终端：豁免/两腿/推
 | [moonback 集成](docs/moonback-integration.md) | 逐路由守卫 vs App 全局中间件、wasm 顶层 `let` 无熵、cookie 只是载体、失败响应怎么换 |
 | [数据模型](docs/data-model.md) | 六类记录字段、关系、TTL 公式、Redis/SQL 物理映射、变更纪律 |
 | [常见问题](docs/faq.md) | 集群、多实例、序列化兼容、与 JWT 的取舍 |
+| [范围与保证](SCOPE.md) | 支持范围、已知边界与参考来源声明 |
 
 ## 模块与文档在哪
 
@@ -263,6 +264,15 @@ bash scripts/gate.sh     # 本地门禁：零警告 + 用例条数与矩阵一�
 - 随机流是 core 提供的 **ChaCha8（8 轮变体）**，本项目不宣称其等同 ChaCha20 强度。
 - 不做注解式鉴权（语言无注解，这是语言事实）；不做 JWT——令牌是不透明随机串 + 服务端会话。
   web 框架适配已交付 moonback 那一层（`mldong/moon-token-moonback`），其余框架照它的形状接。
+
+## 存储后端的交付边界
+
+**核心链（`moon-token` 与 `moon-token-store`、`moon-token-store-file`）不引入第三方运行时**，
+只依赖官方 `moonbitlang/async` 与本家模块；内存与文件两档不要求任何外部服务，是核心交付范围。
+
+`moon-token-store-redis` 是**扩展后端**，不在核心保证范围内：它依赖第三方 `oboard/redis`，
+需要自备 Redis 服务端，其可用性随该依赖演进；它解决的是"多实例共享会话"，不是核心链的必需项。
+`moon-token-moonback` 同属适配层扩展，依赖官方 `moonbitlang/moonback`。
 
 ## 许可与来源
 
