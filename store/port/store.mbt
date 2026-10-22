@@ -168,9 +168,7 @@ pub fn parse_cursor(text : String) -> (Int64, String)? {
 ///|
 /// 权限源端口：业务只供数，判定归库（`core/policy`）。
 ///
-/// 三个方法的返回都进 `P:` 授权快照、按会话缓存（见 `PermissionRecord`），**每会话至多问一次**——
-/// 所以这里可以放心查库；但也因此"业务改了角色权限"不会自动生效，得由 `invalidate_grants` 或
-/// 重新登录来推翻快照。
+/// `P:` 快照命中时复用；并发未命中可重复取数，业务改权限后须调用 `invalidate_grants`。
 ///
 /// `extra` 是登录时随 `login(extra=...)` 写进会话的附加属性（appCode/ip/ua 这类供数要用、
 /// 又不该编进 login_id 的会话级属性——编 login_id 会污染按身份搜索的 API）。**没带属性时是空表，

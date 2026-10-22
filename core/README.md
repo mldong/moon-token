@@ -15,7 +15,8 @@ moon add mldong/moon-token-store  # 引用 @port / @mem 就要显式装，别指
 moon add moonbitlang/async      # 核心包已依赖它；你的包要用 async test/fn 仍需显式装并 import
 ```
 
-`moon.pkg` 照这段写（下面的五分钟跑通用到全部五个 import；`async` 不加别名也行）：
+在你的 MoonBit 项目中，将下面“五分钟跑通”的代码保存为 `token_example_test.mbt`，
+并在同目录的 `moon.pkg` 中写入以下配置：
 
 ```text
 import {
@@ -24,12 +25,11 @@ import {
   "mldong/moon-token-store/port" @port,
   "mldong/moon-token-store/memory" @mem,
   "moonbitlang/async",
-}
+} for "test"
 ```
 
-最后一行别省：`moon add` 只把 `moonbitlang/async` 写进 `moon.mod`，包里要用 `async test`
-还得在 `moon.pkg` 里 import 它——漏了会报
-`Cannot use 'async test': package moonbitlang/async is not imported`。
+`moon add` 声明模块依赖，`import` 让本包代码可以使用它；异步测试需要显式导入 `moonbitlang/async`。
+`for "test"` 对应本例的测试文件；把实现放到普通 `.mbt` 源文件时，移除该限定。
 要用路由守卫就再加一行 `"mldong/moon-token/guard" @guard`。
 
 ## 它解决什么
@@ -115,6 +115,15 @@ async test "被踢方拿到的是 KickedOut，不是笼统未登录" {
 }
 ```
 
+在 `token_example_test.mbt` 所在目录执行：
+
+```bash
+moon check --target wasm
+moon test --target wasm token_example_test.mbt
+```
+
+测试应通过，并分别断言登录号为 `u1`、被踢后的原因为 `not login: KickedOut`。
+
 ## 文档
 
 用法、机制与取舍都在仓库的 `docs/` 下（mooncakes 只渲染本模块 README，所以链接给的是 GitHub 绝对地址）：
@@ -165,3 +174,7 @@ async test "被踢方拿到的是 KickedOut，不是笼统未登录" {
 Apache-2.0。同家族发布件：`mldong/moon-token`（本包）、`mldong/moon-token-store`（契约与内存适配器）、
 `mldong/moon-token-store-file`（文件后端）、`mldong/moon-token-store-redis`（Redis 后端）、
 `mldong/moon-token-moonback`（moonback 适配层），同版本号、按拓扑序发布。
+
+设计参考 [Sa-Token](https://github.com/dromara/Sa-Token)，许可证为
+[Apache-2.0](https://github.com/dromara/Sa-Token/blob/dev/LICENSE)。参考范围是双向会话映射、
+会话分层、并发登录、活跃时效与淘汰语义；本包的 MoonBit 领域模型与异步端口由本项目实现。

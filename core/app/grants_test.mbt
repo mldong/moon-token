@@ -101,7 +101,7 @@ fn grant_auth() -> @app.TokenAuth[@mem.MemoryStore, CountingPerms] {
 }
 
 ///|
-async test "A31 一枚会话只问业务一次：三次判定共用同一份快照" {
+async test "A31 串行三次判定共用会话快照：三个供数方法各调用一次" {
   @port.set_clock(Some(fn() { 9_000_000L }))
   reset_probe(["user:info"], ["user"], false)
   let auth = grant_auth()

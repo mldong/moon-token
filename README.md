@@ -1,7 +1,8 @@
 # moon-token
 
-MoonBit 生态的**登录态 / 会话标准件**。DDD 分层、async-first 契约、零第三方运行时依赖
-（核心与存储契约只依赖官方 `moonbitlang/async`，Redis 后端另引 `oboard/redis`），本地 `moon add` 即用，内存与文件后端不需要任何外部服务。
+MoonBit 生态的**登录态 / 会话标准件**。DDD 分层、async-first 契约，本地 `moon add` 即用。
+存储契约零注册表依赖；核心与文件后端只引本家模块和官方异步运行时，内存与文件后端不需要外部服务。
+Redis 后端另引 `oboard/redis`，moonback 适配层另引官方 `moonbitlang/moonback`。
 
 ## 特性
 
@@ -266,6 +267,11 @@ bash scripts/gate.sh     # 本地门禁：零警告 + 用例条数与矩阵一�
 ## 许可与来源
 
 Apache-2.0，见 [LICENSE](LICENSE)。
+
+设计参考 [Sa-Token](https://github.com/dromara/Sa-Token)，其许可证为
+[Apache-2.0](https://github.com/dromara/Sa-Token/blob/dev/LICENSE)。参考范围包括双向会话映射、
+账号与令牌会话分层、并发登录策略、活跃时效和会话淘汰语义；本库按 MoonBit 的类型与效果系统
+实现领域模型、异步存储端口和框架适配，具体取舍见[数据模型](docs/data-model.md)。
 
 本项目未移植、未翻译、未复制任何第三方代码；发布包里不含 vendored 的第三方源
 （依赖只有官方 `moonbitlang/async`、`moonbitlang/moonback`，以及 Redis 后端用的 `oboard/redis`，

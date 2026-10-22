@@ -9,10 +9,10 @@
 moon update
 moon add mldong/moon-token
 moon add mldong/moon-token-store  # 引用 @port / @mem 就要显式装：传递依赖对调用方不自动可见
-moon add moonbitlang/async      # async 运行时；库本身不依赖它，但你的调用方要
+moon add moonbitlang/async      # 核心包已依赖它；调用方使用 async 仍需显式装并 import
 ```
 
-本页代码块用到的包都来自上面前两条 `moon add`；`moon.pkg` 照这段写（`async` 不加别名也行）：
+本页代码块用到的包来自上面三条 `moon add`；`moon.pkg` 照这段写（`async` 不加别名也行）：
 
 ```text
 import {

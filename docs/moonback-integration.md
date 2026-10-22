@@ -54,7 +54,8 @@ moon add moonbitlang/moonback moonbitlang/async
 ## 3. 业务只供数，裁决在库里
 
 三个方法就是 [权限端口](permissions.md) 的全部：`get_permissions` / `get_roles` / `is_super_admin`。
-库拿到数之后按路由策略裁决，**每会话至多问一次**（第二次起读 `P:` 授权快照）。
+库拿到数之后按路由策略裁决；`P:` 授权快照命中时复用结果，未命中时取数并回填。
+同时未命中的并发请求可能重复取数，不保证一个时效窗口内只调用一轮供数端口。
 
 ```moonbit
 struct DocPerms {}
