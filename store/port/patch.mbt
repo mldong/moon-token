@@ -18,13 +18,11 @@ pub(all) enum FamilyPatch {
   /// 存在理由：`max_sessions` 选 Kick/Supersede 档时，被剔的那枚要留墓碑让对端读到精确原因，
   /// 但它已经不算"这个账号还活着的会话"——成员不摘掉，上限就会把保留窗内的墓碑数进去。
   ForgetTokens(String, Array[String])
-  /// 续期：login_id, device, token, 新的到期时刻, 该会话的登录时刻。
-  /// 把一枚会话的到期点前推，**同时把反查族里该成员的 `e` 搬到同一点**（成员不在族里就补上），
-  /// 于是族键的 TTL（= 成员 `e` 的最大值）跟着走。
-  /// 存在理由：族键不跟着搬的话，一枚长期活跃的会话会把自己的反查索引熬过期——
-  /// `kickout` / `logout_by_id` / `supersede` / `invalidate_grants` 都先读族，读不到就静默 0 枚，
-  /// 而被踢方下次请求照样通过（A40 钉住）。成员已存在时**不推版本号**（集合没变，不变量 3）。
-  TouchExpire(String, Device, String, Int64, Int64)
+  /// 续期：login_id, device, token, logical_expire_at, login_time, key_expire_at。
+  /// 会话与族成员的逻辑到期点取 logical_expire_at；族键 TTL 仍取成员逻辑到期点的最大值。
+  /// `T:` 键的物理到期点只取显式 key_expire_at（调用方已算好保留窗），适配器不推断、不重复加窗。
+  /// 成员不在族里就补上；已存在时不推版本号（集合没变，不变量 3）。
+  TouchExpire(String, Device, String, Int64, Int64, Int64)
   /// 附加数据直写（`S:`/`D:`/`R:`）：key, payload, expire_at（<=0 表示不过期）
   PutRecord(String, String, Int64)
   /// 删任意键
@@ -44,28 +42,48 @@ pub fn KeySpace::of(realm : String) -> KeySpace {
 }
 
 ///|
+/// 编码 realm 分隔符与 Redis glob 字符，原始 realm 保持不变。
+pub fn KeySpace::prefix(self : KeySpace) -> String {
+  let buf = StringBuilder()
+  for c in self.realm.iter() {
+    match c {
+      '%' => buf.write_string("%25")
+      ':' => buf.write_string("%3A")
+      '*' => buf.write_string("%2A")
+      '?' => buf.write_string("%3F")
+      '[' => buf.write_string("%5B")
+      ']' => buf.write_string("%5D")
+      '\\' => buf.write_string("%5C")
+      _ => buf.write_char(c)
+    }
+  }
+  buf.write_char(':')
+  buf.to_string()
+}
+
+///|
 pub fn KeySpace::token(self : KeySpace, token : String) -> String {
-  "\{self.realm}:T:\{token}"
+  "\{self.prefix()}T:\{token}"
 }
 
 ///|
 pub fn KeySpace::family(self : KeySpace, login_id : String) -> String {
-  "\{self.realm}:A:\{login_id}"
+  "\{self.prefix()}A:\{login_id}"
 }
 
 ///|
 pub fn KeySpace::account_session(self : KeySpace, login_id : String) -> String {
-  "\{self.realm}:S:\{login_id}"
+  "\{self.prefix()}S:\{login_id}"
 }
 
 ///|
 pub fn KeySpace::refresh(self : KeySpace, refresh_token : String) -> String {
-  "\{self.realm}:R:\{refresh_token}"
+  "\{self.prefix()}R:\{refresh_token}"
 }
 
 ///|
 pub fn KeySpace::ban(self : KeySpace, login_id : String) -> String {
-  "\{self.realm}:D:\{login_id}"
+  "\{self.prefix()}D:\{login_id}"
 }
 
 ///|
@@ -74,7 +92,7 @@ pub fn KeySpace::ban(self : KeySpace, login_id : String) -> String {
 /// 这样一来会话终结即快照同键作废，失效也不必猜设备（族里能枚举出全部 token）。
 /// 代价是同账号多端登录各问业务一次，仍远比"每请求问一次"便宜。
 pub fn KeySpace::grants(self : KeySpace, token : String) -> String {
-  "\{self.realm}:P:\{token}"
+  "\{self.prefix()}P:\{token}"
 }
 
 ///|
@@ -83,7 +101,7 @@ pub fn KeySpace::grants(self : KeySpace, token : String) -> String {
 /// 批量取载荷那一轮被丢弃，宁可少几条也不返回错数据。
 /// 内存版不必真建这条键（遍历自有表即可），但排序与游标必须与 Redis ZSET 等价。
 pub fn KeySpace::session_index(self : KeySpace) -> String {
-  "\{self.realm}:Z"
+  "\{self.prefix()}Z"
 }
 
 ///|

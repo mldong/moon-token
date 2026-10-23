@@ -55,7 +55,8 @@ pub fn MemoryStore::lookup(self : MemoryStore, key : String) -> String? {
     None => None
     Some(entry) =>
       if is_expired(entry.expire_at, now) {
-        if key.contains(":T:") && is_live_session_payload(entry.payload) {
+        if key.has_prefix(self.keys.token("")) &&
+          is_live_session_payload(entry.payload) {
           // 活会话过期要照旧交回载荷，让 classify_access 报 SessionExpired；
           // 若这里一并吞掉，"过期"与"无效"就塌成同一个原因，负向反馈的精度丢了
           Some(entry.payload)
@@ -131,7 +132,8 @@ fn MemoryStore::revise_token(
   self : MemoryStore,
   token : String,
   status : @port.SessionStatus?,
-  expire_at : Int64,
+  logical_expire_at : Int64,
+  key_expire_at : Int64,
 ) -> Unit {
   let key = self.keys.token(token)
   match self.entries.get(key) {
@@ -145,13 +147,9 @@ fn MemoryStore::revise_token(
             Some(s) => record.status = s
             None => ()
           }
-          if expire_at > 0L {
-            record.expire_at = expire_at
-            entry.payload = record.encode()
-            entry.expire_at = expire_at
-          } else {
-            entry.payload = record.encode()
-          }
+          record.expire_at = logical_expire_at
+          entry.payload = record.encode()
+          entry.expire_at = key_expire_at
         }
       }
     }
@@ -178,7 +176,7 @@ pub fn MemoryStore::apply_patch(
     }
     @port.MarkStatus(tokens, status, deadline) =>
       for token in tokens {
-        self.revise_token(token, Some(status), deadline)
+        self.revise_token(token, Some(status), deadline, deadline)
       }
     @port.RemoveTokens(login_id, tokens) => {
       self.remove(tokens.map((t : String) => self.keys.token(t)))
@@ -211,12 +209,19 @@ pub fn MemoryStore::apply_patch(
         self.save_family(login_id, fam)
       }
     }
-    @port.TouchExpire(login_id, device, token, expire_at, login_time) => {
-      self.revise_token(token, None, expire_at)
+    @port.TouchExpire(
+      login_id,
+      device,
+      token,
+      logical_expire_at,
+      login_time,
+      key_expire_at
+    ) => {
+      self.revise_token(token, None, logical_expire_at, key_expire_at)
       let fam = self.load_family(login_id)
       // 族里该成员的 e 必须搬到同一点：族键 TTL 取的就是成员 e 的最大值，
       // 不搬就会让还在用的会话先丢掉反查索引（A40）
-      if fam.touch_expire(device, token, expire_at, login_time) {
+      if fam.touch_expire(device, token, logical_expire_at, login_time) {
         self.save_family(login_id, fam)
       }
     }
@@ -239,7 +244,7 @@ pub fn MemoryStore::sweep_at(self : MemoryStore, now : Int64) -> Int {
   let mut pruned = 0
   let family_entries = self.entries
     .to_array()
-    .filter((pair : (String, Entry)) => pair.0.contains(":A:"))
+    .filter((pair : (String, Entry)) => pair.0.has_prefix(self.keys.family("")))
   for (key, entry) in family_entries {
     let decoded = @port.FamilyRecord::decode(entry.payload)
     match decoded {
@@ -307,7 +312,7 @@ fn listing_newer(a : @port.SessionListing, b : @port.SessionListing) -> Bool {
 ///|
 /// 会话索引前缀，`list_sessions` 靠它从自有表里挑出 `T:` 条目
 fn MemoryStore::token_prefix(self : MemoryStore) -> String {
-  "\{self.keys.realm}:T:"
+  self.keys.token("")
 }
 
 ///|

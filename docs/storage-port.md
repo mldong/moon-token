@@ -174,7 +174,7 @@ async test "登录写三处；窗内再读一次不多写" {
 | `RemoveTokens` | login_id, tokens | 摘成员 + 删 `T:` 键 |
 | `ForgetTokens` | login_id, tokens | **只摘成员、留 `T:` 墓碑**：上限的 Kick/Supersede 档靠它 |
 | `RefreshLogin` | login_id, token, login_time | 复用同 token 重新登录：移回队尾＋刷 `lt`，**不推版本号**（成员集合没变） |
-| `TouchExpire` | login_id, device, token, expire_at, login_time | 续期：前推 `T:` 的到期点，**并把族里该成员的 `e` 搬到同一点**（成员不在族里就补上）⇒ 族键 TTL 跟着走。只搬 `T:` 的话，长期活跃的会话会把自己的反查索引熬过期，踢人／按账号登出／作废授权会静默 0 枚 |
+| `TouchExpire` | login_id, device, token, expire_at, login_time, key_expire_at | `expire_at` 更新会话和族成员的逻辑到期点；`key_expire_at` 单独控制会话键回收，包含保留窗。族成员不存在则补上，族键 TTL 取成员到期点最大值 |
 | `PutRecord` | key, payload, expire_at | 附加数据直写（`S:` / `D:` / `R:` / `P:`） |
 | `RemoveKeys` | keys | 删任意键 |
 
@@ -210,6 +210,8 @@ async test "同一个补丁投两次，版本号不动" {
 读出来后再由裁决层判。
 
 ## 5. 键位与线格式
+
+下表的 `{realm}` 使用 `KeySpace::prefix()` 中的编码值：`% : * ? [ ] \\` 分别编码为 `%25 %3A %2A %3F %5B %5D %5C`，避免分隔符或 Redis 模式字符越过命名空间。自定义后端应调用 KeySpace，而不是直接拼原始 realm；普通名称键位不变，含特殊字符的旧会话需重新登录。
 
 ```text
 {realm}:T:{token}        会话记录        线格式 v=1：k=v|k=v，键值都转义

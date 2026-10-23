@@ -72,6 +72,10 @@ jobs:
           moon version --all
           moon update
 
+      - name: Test gate self-tests
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python scripts/test_test_gate.py
+
       - name: Check
         run: moon check --target wasm --no-render
 
@@ -82,12 +86,13 @@ jobs:
 
       - name: Test
         run: |
-          moon test --target wasm --no-render | tee wasm-test.txt
-          moon test --target native --no-render | tee native-test.txt
-          # 门禁：用例条数必须与测试矩阵一致（wasm-gc 档会静默丢弃 async 用例仍 exit 0，
-          # 所以"退出码 0"不构成"跑过了"的证据）
-          grep -q "Total tests: 109" wasm-test.txt
-          grep -q "Total tests: 109" native-test.txt
+          set -euo pipefail
+          expected_tests=134
+          moon test --target wasm --no-render 2>&1 | tee wasm-test.txt
+          moon test --target native --no-render 2>&1 | tee native-test.txt
+          # 门禁：退出码成功且唯一摘要精确匹配矩阵条数、全部通过（wasm-gc 会静默丢弃 async 用例）。
+          python scripts/check-test-result.py "$expected_tests" wasm-test.txt
+          python scripts/check-test-result.py "$expected_tests" native-test.txt
 
       # 参赛验收第 4 条"README 可复现" + 使用文档每个 moonbit 块都真编译真跑。
       # 这两步在 verify 里判的是"文档对不对得上当前这棵树"（DOCS_TARGET=source），
@@ -115,6 +120,7 @@ jobs:
 
       - name: Assert zero warnings
         run: |
+          set -euo pipefail
           moon check --target wasm --no-render 2>&1 | tee check.txt
           ! grep -q "Warning" check.txt
 

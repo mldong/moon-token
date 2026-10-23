@@ -157,18 +157,41 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::login(
   let use_remember = remember
   let dev = @port.Device::normalize(Some(device))
   let fam = self.load_family(login_id)
-  let plan = @policy.decide_concurrent(
+  let mut plan = @policy.decide_concurrent(
     self.config.concurrent,
     fam,
     dev,
     now,
     self.config.max_sessions,
   )
+  let mut shared_session : @domain.TokenSession? = None
+  while true {
+    match plan.action {
+      @policy.IssueNew => break
+      @policy.Reuse(existing) => {
+        match self.read_session(existing) {
+          Some(session) =>
+            if @policy.classify_access(session.status(), session.expire_at(), now)
+              is None {
+              shared_session = Some(session)
+              break
+            }
+          None => ()
+        }
+        fam.remove_members([existing]) |> ignore
+        self.store.apply(@port.ForgetTokens(login_id, [existing]))
+        plan = @policy.decide_concurrent(
+          self.config.concurrent, fam, dev, now, self.config.max_sessions,
+        )
+      }
+    }
+  }
   match plan.action {
     @policy.IssueNew => {
       // Supersede 策略：先把既有 token 落成"被顶"墓碑，再签新的
       if !plan.supersede_tokens.is_empty() {
         let deadline = @policy.kick_deadline(now, self.config.kick_grace_ms())
+        self.clear_refresh(plan.supersede_tokens)
         self.store.apply(
           @port.MarkStatus(plan.supersede_tokens, @port.Superseded, deadline),
         )
@@ -199,65 +222,31 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::login(
       }
       result
     }
-    @policy.Reuse(existing) =>
-      match self.read_session(existing) {
-        None => {
-          // 族里记着但会话已没：退回新签，别把一个死 token 当有效返回
-          let result = self.issue(login_id, dev, use_remember, extra)
-          self.events.fire(
-            @event.TokenEvent::make(
-              @event.LoggedIn,
-              login_id,
-              dev.id,
-              result.token,
-              now,
-            ),
-          )
-          result
-        }
-        Some(session) =>
-          if @policy.classify_access(session.status(), session.expire_at(), now)
-            is None {
-            // 复用同一枚 token 也算"又登录了一次"：成员要移回队尾。
-            // 不刷新的话，一台天天复登的老设备在先进先出里永远排最前，会被上限先剔掉
-            self.store.apply(@port.RefreshLogin(login_id, existing, now))
-            // 复用会话的 extra 要刷新：登录属性（appCode/ip/ua）以最近一次登录为准——
-            // 与 boot2 每次登录重写 session 的 LoginUser 同语义
-            match extra {
-              Some(m) => {
-                for k, v in m {
-                  session.set_extra(k, Some(v))
-                }
-                self.store.set(
-                  self.keys.token(existing),
-                  session.payload(),
-                  self.config.key_expire_at(session.expire_at()),
-                )
-              }
-              None => ()
-            }
-            LoginResult::make(
-              existing,
-              login_id,
-              session.device().id,
-              session.expire_at(),
-              session.refresh_token(),
-              true,
-            )
-          } else {
-            let result = self.issue(login_id, dev, use_remember, extra)
-            self.events.fire(
-              @event.TokenEvent::make(
-                @event.LoggedIn,
-                login_id,
-                dev.id,
-                result.token,
-                now,
-              ),
-            )
-            result
+    @policy.Reuse(existing) => {
+      let session = shared_session.unwrap()
+      self.store.apply(@port.RefreshLogin(login_id, existing, now))
+      match extra {
+        Some(m) => {
+          for k, v in m {
+            session.set_extra(k, Some(v))
           }
+          self.store.set(
+            self.keys.token(existing),
+            session.payload(),
+            self.config.key_expire_at(session.expire_at()),
+          )
+        }
+        None => ()
       }
+      LoginResult::make(
+        existing,
+        login_id,
+        session.device().id,
+        session.expire_at(),
+        session.refresh_token(),
+        true,
+      )
+    }
   }
 }
 
@@ -316,6 +305,7 @@ async fn[S : @port.TokenStore, P] TokenAuth::verify(
           token,
           target,
           session.login_time(),
+          self.config.key_expire_at(target),
         ),
       )
     }
@@ -380,6 +370,7 @@ async fn[S : @port.TokenStore, P] TokenAuth::mark_tokens(
   } else {
     let now = @port.now_ms()
     let deadline = @policy.kick_deadline(now, self.config.kick_grace_ms())
+    self.clear_refresh(targets)
     self.store.apply(@port.MarkStatus(targets, status, deadline))
     for token in targets {
       self.events.fire(
@@ -486,13 +477,8 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::logout_by_id(
 ) -> Int raise @port.TokenError {
   let fam = self.load_family(login_id)
   let targets = targets_of(fam, device)
-  self.store.apply(@port.RemoveTokens(login_id, targets))
-  self.clear_grants(targets)
-  let now = @port.now_ms()
   for token in targets {
-    self.events.fire(
-      @event.TokenEvent::make(@event.LoggedOut, login_id, "", token, now),
-    )
+    self.logout(token)
   }
   targets.length()
 }
@@ -685,18 +671,49 @@ pub async fn[S : @port.TokenStore, P] TokenAuth::load_online(
   let keys = page.items.map((item : @port.SessionListing) =>
     self.keys.token(item.token))
   let rows = self.store.get_many(keys)
+  let now = @port.now_ms()
   let out : Array[OnlineRow] = []
   let mut i = 0
   while i < page.items.length() {
     let row = rows[i]
     let record = match row.1 {
       None => None
-      Some(payload) => @port.SessionRecord::decode(payload)
+      Some(payload) => match @port.SessionRecord::decode(payload) {
+        Some(record) =>
+          if @policy.classify_access(record.status, record.expire_at, now) is None {
+            Some(record)
+          } else {
+            None
+          }
+        None => None
+      }
     }
     out.push(OnlineRow::make(page.items[i], record))
     i += 1
   }
   out
+}
+
+///|
+async fn[S : @port.TokenStore, P] TokenAuth::clear_refresh(
+  self : TokenAuth[S, P],
+  tokens : Array[String],
+) -> Unit raise @port.TokenError {
+  let keys : Array[String] = []
+  for token in tokens {
+    match self.read_session(token) {
+      Some(session) => {
+        let refresh = session.refresh_token()
+        if !refresh.is_empty() {
+          keys.push(self.keys.refresh(refresh))
+        }
+      }
+      None => ()
+    }
+  }
+  if !keys.is_empty() {
+    self.store.apply(@port.RemoveKeys(keys))
+  }
 }
 
 ///|

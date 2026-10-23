@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# 本地门禁：与 CI 的 verify job 同判据。断言五件事：零警告、用例条数=109、0 failed、文档与 README 真跑、页面安装面自洽。
+# 本地门禁：与 CI 的 verify job 同判据。断言五件事：零警告、用例条数精确匹配矩阵、全部通过、文档与 README 真跑、页面安装面自洽。
 set -euo pipefail
 export MOON_HOME="${MOON_HOME:-$HOME/.moon}"
 cd "$(dirname "$0")/.."
+expected_tests=134
+PYTHONDONTWRITEBYTECODE=1 python scripts/test_test_gate.py
 
 # 文档检查切"对本地源码"那一支：发版前注册表还是旧代次，用 registry 模式判破坏性变更会假绿，
 # 而发布之后 CI 还会再以 registry 模式跑一遍当"用户那条腿"的验证，两分工不重叠。
@@ -17,11 +19,11 @@ fi
 
 test_log=$(moon test --target wasm --no-render 2>&1)
 printf '%s\n' "$test_log" | tail -3
-printf '%s' "$test_log" | grep -q "Total tests: 109" || { echo "GATE FAIL: 用例条数不是 109（矩阵增删要同步这里；RS 系列无服务端时以 SKIP 计入通过，真跑见 scripts/redis-gate.sh）" >&2; exit 1; }
-printf '%s' "$test_log" | grep -q "failed: 0" || { echo "GATE FAIL: 有失败用例" >&2; exit 1; }
+# RS 系列无服务端时仍以 SKIP 计入通过，真跑见 scripts/redis-gate.sh。
+python scripts/check-test-result.py "$expected_tests" - <<< "$test_log"
 bash scripts/docs-check.sh
 bash scripts/readme-check.sh
 # 页面安装面（source 档）：每个已发布模块 README 自己给的 moon add 清单，必须够编译它自己的代码块。
 # docs-check 会自补全家族依赖，所以这道闸不能省——省了"页面少写一条 add"就永远不会红。
 PAGE_MODE=source bash scripts/page-install-check.sh
-echo "GATE PASS: 零警告 + Total tests: 109 + 0 failed + 文档代码块与 README 对本地源码真跑 + 页面安装面自洽"
+echo "GATE PASS: 零警告 + Total tests: $expected_tests + 0 failed + 文档代码块与 README 对本地源码真跑 + 页面安装面自洽"

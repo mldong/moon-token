@@ -18,8 +18,12 @@ const SWEEP_NOW : Int64 = 2_000_000_000_000L
 
 ///|
 fn session_payload(login_id : String, expire_at : Int64) -> String {
-  @port.SessionRecord::make(login_id, @port.Device::of("pc"), 1_000_000L, expire_at)
-    .encode()
+  @port.SessionRecord::make(
+    login_id,
+    @port.Device::of("pc"),
+    1_000_000L,
+    expire_at,
+  ).encode()
 }
 
 ///|
@@ -124,7 +128,7 @@ async test "FS6 库里自动写 .gitignore（会话数据不该进 git）" {
   let dir = @fs.tmpdir(prefix="mt-fs6.")
   let a = @file.FileStore::open("user", dir)
   a.set("user:T:x", "v=1", 0L)
-  let text = (@fs.read_file(dir + "/.gitignore")).text()
+  let text = @fs.read_file(dir + "/.gitignore").text()
   assert_eq(text, "*\n")
   @fs.rmdir(dir, recursive=true)
 }
@@ -156,7 +160,7 @@ async test "FS8 与内存版逐项同判据" {
     @port.AddToken("u1", @port.Device::of("pc"), "t1", FAR, 1_000_000L),
     @port.AddToken("u1", @port.Device::of("app"), "t2", FAR, 1_100_000L),
     @port.MarkStatus(["t1"], @port.Kicked, SWEEP_NOW),
-    @port.TouchExpire("u1", @port.Device::of("app"), "t2", FAR, 1_100_000L),
+    @port.TouchExpire("u1", @port.Device::of("app"), "t2", FAR, 1_100_000L, FAR),
     @port.RemoveTokens("u1", ["t2"]),
     @port.RemoveKeys(["user:S:u1"]),
   ]
@@ -179,4 +183,124 @@ async test "FS8 与内存版逐项同判据" {
     mem.list_sessions(@port.SessionFilter::all(), "", 10).items.length(),
   )
   @fs.rmdir(dir, recursive=true)
+}
+
+///|
+async fn reopen_mark_status(
+  status : @port.SessionStatus,
+  reopen_first : Bool,
+) -> Unit {
+  let dir = @fs.tmpdir(prefix="mt-fs-mark.")
+  defer @fs.rmdir(dir, recursive=true)
+  let key = @port.KeySpace::of("user").token("marked")
+  let original = @file.FileStore::open("user", dir)
+  original.set(key, session_payload("u1", FAR), FAR)
+  let writer = if reopen_first {
+    @file.FileStore::open("user", dir)
+  } else {
+    original
+  }
+  writer.apply(@port.MarkStatus(["marked"], status, FAR - 20_000L))
+  writer.apply(@port.MarkStatus(["marked"], status, FAR - 10_000L))
+  let reopened = @file.FileStore::open("user", dir)
+  let record = @port.SessionRecord::decode(reopened.get(key).unwrap()).unwrap()
+  assert_true(record.status.same(status))
+  assert_eq(record.expire_at, FAR - 10_000L)
+  reopened.sweep(FAR - 10_001L) |> ignore
+  assert_true(reopened.get(key) is Some(_))
+  reopened.sweep(FAR - 10_000L) |> ignore
+  let after_deadline = @file.FileStore::open("user", dir)
+  assert_eq(after_deadline.get(key), None)
+}
+
+///|
+async test "FS9 kicked tombstone and deadline survive reopening" {
+  reopen_mark_status(@port.Kicked, false)
+}
+
+///|
+async test "FS10 superseded tombstone stays durable after loading and rewriting" {
+  reopen_mark_status(@port.Superseded, true)
+}
+
+///|
+async test "FS11 TouchExpire persists logical expiry and the separate key deadline" {
+  let dir = @fs.tmpdir(prefix="mt-fs11.")
+  defer @fs.rmdir(dir, recursive=true)
+  let keys = @port.KeySpace::of("user")
+  let key = keys.token("renewed")
+  let device = @port.Device::of("pc")
+  let logical = FAR - 10_000L
+  let writer = @file.FileStore::open("user", dir)
+  writer.set(key, session_payload("u1", logical - 10_000L), logical - 5_000L)
+  writer.apply(
+    @port.AddToken("u1", device, "renewed", logical - 10_000L, 1_000_000L),
+  )
+  let patch = @port.TouchExpire(
+    "u1",
+    device,
+    "renewed",
+    logical,
+    1_000_000L,
+    FAR,
+  )
+  writer.apply(patch)
+  writer.apply(patch)
+  let reopened = @file.FileStore::open("user", dir)
+  let session = @port.SessionRecord::decode(reopened.get(key).unwrap()).unwrap()
+  assert_eq(session.expire_at, logical)
+  assert_true(session.status.same(@port.Active))
+  let family = @port.FamilyRecord::decode(
+    reopened.get(keys.family("u1")).unwrap(),
+  ).unwrap()
+  assert_eq(family.members[0].expire_at, logical)
+  assert_eq(family.version, 1L)
+  reopened.sweep(logical) |> ignore
+  let during_window = @file.FileStore::open("user", dir)
+  assert_true(during_window.get(key) is Some(_))
+  assert_eq(during_window.get(keys.family("u1")), None)
+  during_window.sweep(FAR) |> ignore
+  let after_window = @file.FileStore::open("user", dir)
+  assert_eq(after_window.get(key), None)
+  assert_eq(after_window.persisted_size(), 0)
+}
+
+///|
+async test "FS12 nested realms in one directory do not load each other's keys" {
+  let dir = @fs.tmpdir(prefix="mt-fs12.")
+  defer @fs.rmdir(dir, recursive=true)
+  let realms = ["a", "a:T:x", "a%3AT%3Ax"]
+  for realm in realms {
+    let keys = @port.KeySpace::of(realm)
+    let store = @file.FileStore::open(realm, dir)
+    let all = [
+      keys.token("t"),
+      keys.family("u"),
+      keys.account_session("u"),
+      keys.refresh("r"),
+      keys.ban("u"),
+      keys.grants("t"),
+      keys.session_index(),
+    ]
+    for key in all {
+      store.set(key, realm, FAR)
+    }
+  }
+  assert_eq(file_count(dir), 22)
+  for realm in realms {
+    let store = @file.FileStore::open(realm, dir)
+    assert_eq(store.persisted_size(), 7)
+    assert_eq(store.get(@port.KeySpace::of(realm).token("t")), Some(realm))
+    for other in realms {
+      if other != realm {
+        assert_eq(store.get(@port.KeySpace::of(other).token("t")), None)
+      }
+    }
+  }
+  let parent = @file.FileStore::open("a", dir)
+  parent.sweep(FAR) |> ignore
+  assert_eq(file_count(dir), 15)
+  for realm in ["a:T:x", "a%3AT%3Ax"] {
+    assert_eq(@file.FileStore::open(realm, dir).persisted_size(), 7)
+  }
 }

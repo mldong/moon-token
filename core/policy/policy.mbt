@@ -179,17 +179,13 @@ pub fn decide_contains(
 ) -> String? {
   match mode {
     @port.And => {
-      let mut missing = ""
+      let mut missing : String? = None
       for item in required {
-        if missing.is_empty() && !granted.contains(item) {
-          missing = item
+        if missing is None && !granted.contains(item) {
+          missing = Some(item)
         }
       }
-      if missing.is_empty() {
-        None
-      } else {
-        Some(missing)
-      }
+      missing
     }
     @port.Or =>
       if required.is_empty() {

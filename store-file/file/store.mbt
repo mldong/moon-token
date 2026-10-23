@@ -75,7 +75,7 @@ async fn FileStore::write_entry(
   } catch {
     err => raise @port.Store("写键 " + key + " 失败：\{err}")
   }
-  self.persisted[key] = entry
+  self.persisted[key] = @mem.Entry::make(entry.payload, entry.expire_at)
 }
 
 ///|
@@ -174,7 +174,7 @@ async fn FileStore::load_from_disk(self : FileStore) -> Unit raise @port.TokenEr
   } catch {
     err => raise @port.Store("扫数据目录失败：\{err}")
   }
-  let owned = self.realm + ":"
+  let owned = @port.KeySpace::of(self.realm).prefix()
   for name in names {
     if name == ".gitignore" {
       ()
@@ -201,7 +201,7 @@ async fn FileStore::load_from_disk(self : FileStore) -> Unit raise @port.TokenEr
               ()
             } else {
               self.mem.put(key, entry.payload, entry.expire_at)
-              self.persisted[key] = entry
+              self.persisted[key] = @mem.Entry::make(entry.payload, entry.expire_at)
             }
         }
       }

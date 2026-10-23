@@ -332,3 +332,13 @@ test "D13 Supersede 不叠加淘汰；同刻登录按 token 字典序定序（�
   assert_eq(co.evict_tokens[0], "b-1")
   assert_eq(co.evict_tokens[1], "b-2")
 }
+
+///|
+test "D14 空字符串缺失项与没有要求分别裁决" {
+  assert_eq(decide_permission([], [], @port.And), None)
+  assert_eq(decide_permission([], [""], @port.And), Some(""))
+  assert_eq(decide_permission([], ["", "x"], @port.And), Some(""))
+  assert_eq(decide_permission([""], [""], @port.And), None)
+  assert_eq(decide_role([], [""], @port.And), Some(""))
+  assert_eq(decide_permission([], ["", "x"], @port.Or), Some(""))
+}

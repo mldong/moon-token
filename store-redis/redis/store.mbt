@@ -160,31 +160,6 @@ async fn RedisStore::write_raw(
 }
 
 ///|
-/// 只改载荷、保住原 TTL。Redis 5.0 没有 `SET ... KEEPTTL`（6.0+ 才有），
-/// 所以先 `PTTL` 再换算成绝对时刻——多一次往返换两版本一致的行为。
-async fn RedisStore::rewrite_keeping_ttl(
-  self : RedisStore,
-  key : String,
-  payload : String,
-) -> Unit raise @port.TokenError {
-  let remain = int_of(self.ask(["PTTL", key]))
-  match remain {
-    Some(ms) =>
-      if ms > 0L {
-        let now = @port.now_ms()
-        let deadline = now + ms
-        let _ = self.ask(["SET", key, payload])
-        let _ = self.ask(["PEXPIREAT", key, deadline.to_string()])
-      } else {
-        let _ = self.ask(["SET", key, payload])
-      }
-    None => {
-      let _ = self.ask(["SET", key, payload])
-    }
-  }
-}
-
-///|
 async fn RedisStore::delete_keys(
   self : RedisStore,
   keys : Array[String],
@@ -371,7 +346,8 @@ async fn RedisStore::revise_token(
   self : RedisStore,
   token : String,
   status : @port.SessionStatus?,
-  expire_at : Int64,
+  logical_expire_at : Int64,
+  key_expire_at : Int64,
 ) -> Unit raise @port.TokenError {
   let key = self.keys.token(token)
   match self.read_raw(key) {
@@ -384,12 +360,8 @@ async fn RedisStore::revise_token(
             Some(s) => record.status = s
             None => ()
           }
-          if expire_at > 0L {
-            record.expire_at = expire_at
-            let _ = self.write_raw(key, record.encode(), expire_at)
-          } else {
-            let _ = self.rewrite_keeping_ttl(key, record.encode())
-          }
+          record.expire_at = logical_expire_at
+          let _ = self.write_raw(key, record.encode(), key_expire_at)
         }
       }
   }
@@ -398,7 +370,7 @@ async fn RedisStore::revise_token(
 ///|
 /// 令牌前缀，`RemoveKeys` 靠它认出哪些键是会话、顺带收索引
 fn RedisStore::token_prefix(self : RedisStore) -> String {
-  "\{self.keys.realm}:T:"
+  self.keys.token("")
 }
 
 ///|
@@ -547,7 +519,7 @@ pub async fn RedisStore::sweep_at(
   // ① 族：过期成员回收，成员对应的 `T:` 已不在也回收；
   //    会话还在但 `e` 与族里不一致时以会话为准修（续期只写 `T:` 不写族会留下这种偏差）。
   //    版本号只随成员增删走，单纯修 `e` 不推。
-  let family_pattern = "\{self.keys.realm}:A:*"
+  let family_pattern = self.keys.family("") + "*"
   for fkey in self.scan_keys(family_pattern) {
     match self.read_raw(fkey) {
       None => ()
@@ -676,7 +648,7 @@ pub async fn RedisStore::apply_patch(
     }
     @port.MarkStatus(tokens, status, deadline) =>
       for token in tokens {
-        let _ = self.revise_token(token, Some(status), deadline)
+        let _ = self.revise_token(token, Some(status), deadline, deadline)
       }
     @port.RemoveTokens(login_id, tokens) => {
       let session_keys : Array[String] = []
@@ -702,10 +674,17 @@ pub async fn RedisStore::apply_patch(
       })
       let _ = self.index_add(token, login_time)
     }
-    @port.TouchExpire(login_id, device, token, expire_at, login_time) => {
-      let _ = self.revise_token(token, None, expire_at)
+    @port.TouchExpire(
+      login_id,
+      device,
+      token,
+      logical_expire_at,
+      login_time,
+      key_expire_at
+    ) => {
+      let _ = self.revise_token(token, None, logical_expire_at, key_expire_at)
       let _ = self.update_family(login_id, (record : @port.FamilyRecord) => {
-        record.touch_expire(device, token, expire_at, login_time)
+        record.touch_expire(device, token, logical_expire_at, login_time)
       })
       // 族里原本没有这成员时，`touch_expire` 会补上并按"增"推版本号；索引同样补一次
       let _ = self.index_add(token, login_time)

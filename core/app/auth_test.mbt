@@ -1,5 +1,5 @@
 ///|
-/// A 系列（A1–A30、A40–A43、A45–A49）：打在**应用层用例**上——async + 内存适配器 + 注入时钟。
+/// A 系列（A1–A30、A40–A43、A45–A58）：打在**应用层用例**上——async + 内存适配器 + 注入时钟。
 /// A31–A39 与 A44 在同目录 `grants_test.mbt`（授权快照与供数端口那一组），编号接续不重号。
 /// 黑盒测试档（`*_test.mbt`）：只有它才吃 moon.pkg 里 `for "test"` 的 import
 /// （白盒档的生成驱动找不到 `moonbitlang/async`，实测 `Error [4020]`），
@@ -896,4 +896,174 @@ async test "A49 摘族成员：保留窗内的墓碑不占 max_sessions 名额�
   advance(10L)
   other.login("u1", device="d3") |> ignore
   assert_eq(access_code(other, oldest.token), @port.KickedOut.code())
+}
+
+///|
+async fn refresh_code(
+  auth : @app.TokenAuth[@mem.MemoryStore, FixedPerms],
+  refresh : String,
+) -> Int {
+  try {
+    let fresh = auth.rotate(refresh)
+    auth.check_login(fresh.token) |> ignore
+    -1
+  } catch {
+    err => code_of(err)
+  }
+}
+
+///|
+async test "A50 批量注销撤销每个设备的 refresh" {
+  let auth = standard()
+  let pc = auth.login("u1", device="pc")
+  let phone = auth.login("u1", device="phone")
+  assert_eq(auth.logout_by_id("u1"), 2)
+  assert_eq(access_code(auth, pc.token), @port.UnknownToken.code())
+  assert_eq(access_code(auth, phone.token), @port.UnknownToken.code())
+  assert_eq(refresh_code(auth, pc.refresh_token), @port.RefreshInvalid.code())
+  assert_eq(refresh_code(auth, phone.refresh_token), @port.RefreshInvalid.code())
+  assert_eq(auth.logout_by_id("u1"), 0)
+}
+
+///|
+async test "A51 按设备注销不撤销其它设备的 refresh" {
+  let auth = standard()
+  let pc = auth.login("u1", device="pc")
+  let phone = auth.login("u1", device="phone")
+  assert_eq(auth.logout_by_id("u1", device="pc"), 1)
+  assert_eq(refresh_code(auth, pc.refresh_token), @port.RefreshInvalid.code())
+  assert_eq(auth.check_login(phone.token), "u1")
+  assert_eq(refresh_code(auth, phone.refresh_token), -1)
+}
+
+///|
+async test "A52 批量踢人联动撤销 refresh 且保留设备边界" {
+  let auth = standard()
+  let pc1 = auth.login("u1", device="pc")
+  let pc2 = auth.login("u1", device="pc")
+  let phone = auth.login("u1", device="phone")
+  assert_eq(auth.kickout("u1", device="pc"), 2)
+  for token in [pc1.token, pc2.token] {
+    assert_eq(access_code(auth, token), @port.KickedOut.code())
+  }
+  for refresh in [pc1.refresh_token, pc2.refresh_token] {
+    assert_eq(refresh_code(auth, refresh), @port.RefreshInvalid.code())
+  }
+  assert_eq(auth.check_login(phone.token), "u1")
+  let next = auth.rotate(phone.refresh_token)
+  auth.kickout("u1") |> ignore
+  assert_eq(refresh_code(auth, next.refresh_token), @port.RefreshInvalid.code())
+}
+
+///|
+async test "A53 顶下线和 Supersede 登录都撤销旧 refresh" {
+  let auth = standard()
+  let old = auth.login("u1", device="pc")
+  auth.supersede("u1") |> ignore
+  assert_eq(access_code(auth, old.token), @port.SupersededByLogin.code())
+  assert_eq(refresh_code(auth, old.refresh_token), @port.RefreshInvalid.code())
+  let cfg = @app.TokenConfig::default()
+  cfg.concurrent = @port.Supersede
+  let replacement = new_auth("replace", cfg, [], [])
+  let first = replacement.login("u1", device="pc")
+  let second = replacement.login("u1", device="phone")
+  assert_eq(refresh_code(replacement, first.refresh_token), @port.RefreshInvalid.code())
+  assert_eq(replacement.check_login(second.token), "u1")
+}
+
+///|
+async test "A54 Shared 踢人后回退新签仍复用且不超上限" {
+  let cfg = @app.TokenConfig::default()
+  cfg.concurrent = @port.Shared
+  cfg.max_sessions = 1
+  let auth = new_auth("shared-kick", cfg, [], [])
+  auth.login("u1", device="pc") |> ignore
+  auth.kickout("u1") |> ignore
+  let first = auth.login("u1", device="pc")
+  assert_false(first.reused)
+  for _ in 0..<3 {
+    let next = auth.login("u1", device="pc")
+    assert_true(next.reused)
+    assert_eq(next.token, first.token)
+    assert_eq(auth.get_token_list_by_login_id("u1").length(), 1)
+  }
+  assert_eq(auth.check_login(first.token), "u1")
+}
+
+///|
+async test "A55 Shared 丢失会话回退必须重新计算其它设备的上限" {
+  let cfg = @app.TokenConfig::default()
+  cfg.concurrent = @port.Shared
+  cfg.max_sessions = 2
+  let auth = new_auth("shared-missing", cfg, [], [])
+  let missing = auth.login("u1", device="pc")
+  let oldest = auth.login("u1", device="phone")
+  auth.store.del([@port.KeySpace::of("shared-missing").token(missing.token)])
+  cfg.max_sessions = 1
+  let fresh = auth.login("u1", device="pc")
+  assert_false(fresh.reused)
+  assert_eq(auth.get_token_list_by_login_id("u1").length(), 1)
+  assert_eq(access_code(auth, oldest.token), @port.UnknownToken.code())
+  assert_eq(auth.check_login(fresh.token), "u1")
+}
+
+///|
+async test "A56 续期后 sweep 仍保留 SessionExpired 的反馈窗口" {
+  let cfg = @app.TokenConfig::default()
+  cfg.timeout = @port.Duration::from_secs(10L)
+  cfg.kick_grace = @port.Duration::from_secs(30L)
+  cfg.renew_min_interval = @port.Duration::from_secs(1L)
+  let auth = new_auth("grace", cfg, [], [])
+  let control = auth.login("control")
+  let renewed = auth.login("renewed")
+  advance(2_000L)
+  assert_eq(auth.check_login(renewed.token), "renewed")
+  advance(10_001L)
+  assert_eq(access_code(auth, renewed.token), @port.SessionExpired.code())
+  auth.sweep() |> ignore
+  assert_eq(access_code(auth, control.token), @port.SessionExpired.code())
+  assert_eq(access_code(auth, renewed.token), @port.SessionExpired.code())
+  advance(30_000L)
+  auth.sweep() |> ignore
+  assert_eq(access_code(auth, renewed.token), @port.UnknownToken.code())
+}
+
+///|
+async test "A57 在线详情丢弃取页后被踢和过期的会话" {
+  let cfg = @app.TokenConfig::default()
+  cfg.timeout = @port.Duration::from_secs(10L)
+  let auth = new_auth("online-live", cfg, [], [])
+  let keep = auth.login("keep")
+  let drop = auth.login("drop")
+  let page = auth.list_online(@port.SessionFilter::all(), "", 10)
+  auth.kickout("drop") |> ignore
+  let rows = auth.load_online(page)
+  assert_eq(rows.length(), 2)
+  for row in rows {
+    if row.listing.token == keep.token {
+      assert_true(row.session is Some(_))
+    } else {
+      assert_eq(row.listing.token, drop.token)
+      assert_true(row.session is None)
+    }
+  }
+  advance(10_001L)
+  for row in auth.load_online(page) {
+    assert_true(row.session is None)
+  }
+}
+
+///|
+async test "A58 空字符串权限和角色要求不是空清单" {
+  let auth = standard()
+  let token = auth.login("u1").token
+  assert_false(auth.has_permission(token, [""], mode=@port.And))
+  assert_false(auth.has_role(token, [""], mode=@port.And))
+  let reason = try {
+    auth.check_permission(token, ["", "missing"], mode=@port.And)
+    "allowed"
+  } catch {
+    err => err.message()
+  }
+  assert_eq(reason, "no permission: ")
 }

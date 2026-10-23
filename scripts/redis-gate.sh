@@ -2,7 +2,7 @@
 # RS 系列真机门禁：要求**真有一台 redis**，并且把任何 SKIP 判成失败。
 #
 # 存在理由：`moon test` 在无服务端时 RS1–RS8 会响亮打印 SKIP 并计入 passed，
-# 于是"109 全绿"完全可以是一台空转的套件（恒 skip 的套件＝没有套件）。
+# 于是"134 全绿"完全可以是一台空转的套件（恒 skip 的套件＝没有套件）。
 # 这道门专治这一种绿：CI 与 gate.sh 都不需要服务端，只有这里是真跑。
 #
 # 用法（两台都跑过才算收口）：
@@ -31,9 +31,9 @@ if grep -q "SKIP RS" "$log"; then
   echo "GATE FAIL: 有 RS 用例被跳过，跳过等于没测" >&2
   exit 1
 fi
-if ! grep -q "Total tests: 109" "$log"; then
+if ! grep -q "Total tests: 134" "$log"; then
   tail -3 "$log"
-  echo "GATE FAIL: 条数不是 109" >&2
+  echo "GATE FAIL: 条数不是 134" >&2
   exit 1
 fi
 if ! grep -q "failed: 0" "$log"; then
@@ -42,4 +42,4 @@ if ! grep -q "failed: 0" "$log"; then
   exit 1
 fi
 tail -2 "$log"
-echo "GATE PASS(redis): 109 条全绿、RS1–RS8 真跑无跳过（host=${MT_REDIS_HOST} db=${MT_REDIS_DB:-0}）"
+echo "GATE PASS(redis): 134 条全绿、RS1–RS8 真跑无跳过（host=${MT_REDIS_HOST} db=${MT_REDIS_DB:-0}）"
