@@ -149,6 +149,12 @@ moon test --target wasm token_example_test.mbt
 可运行示例（含手写十行路由的 HTTP 门面与 13 步 curl 剧本）：
 [`examples/cmd/main`](https://github.com/mldong/moon-token/tree/master/examples/cmd/main)。
 
+## 升级注意
+
+批量注销、踢人和顶下线会同时撤销绑定的 refresh，旧 refresh 不能恢复登录。普通 realm 的会话键位不变；包含 `%`、`:`、`*`、`?`、`[`、`]`、反斜杠的旧 realm 会话需重新登录。
+
+自定义存储后端需同步 `FamilyPatch::TouchExpire` 的第六个参数 `key_expire_at`，将会话逻辑到期点与物理回收时刻分开处理。
+
 ## 边界（v1）
 
 - **本模块不带存储实现**：内存适配器在同家族的 `mldong/moon-token-store`

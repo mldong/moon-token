@@ -40,6 +40,12 @@ async test "写入的会话记录能原样解回来" {
 }
 ```
 
+## 升级注意
+
+`FamilyPatch::TouchExpire` 的参数为 `(login_id, device, token, logical_expire_at, login_time, key_expire_at)`；自定义后端需接收最后的物理回收时刻，不能用逻辑到期点覆盖保留窗。
+
+realm 键前缀由 `KeySpace::prefix()` 编码，普通名称的键位不变。包含 `%`、`:`、`*`、`?`、`[`、`]`、反斜杠的旧 realm 会话需重新登录；不回退读取有歧义的旧键。
+
 ## 换后端要实现什么
 
 ```text
