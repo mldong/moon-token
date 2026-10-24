@@ -41,7 +41,7 @@ MoonBit 的传递依赖对调用方不自动可见：核心包虽然自己依赖
 只要你的代码写到 `@port`／`@mem`，就得把那一行 `moon add` 也带上（漏了会在
 `moon check` 阶段报 `containing module is not imported`）。
 要跑 async 用例或服务另需 `moon add moonbitlang/async`。
-`moon.pkg` 照这段写（最小用法用到全部五个 import；`async` 不加别名也行）：
+`moon.pkg` 照这段写（五个常用 import；`async` 不加别名也行；守卫的 `@guard` 见下一句）：
 
 ```text
 import {
@@ -59,8 +59,25 @@ import {
 
 工具链要求：**跟随官方最新稳定版**（本机代次用 `moon version --all` 现读；CI 每次装官方 latest，
 本库始终在最新工具链上开发与验证——不钉旧版本、也不靠降级依赖绕版本偏斜）。
+尚未安装时先按[官方下载页](https://www.moonbitlang.com/download/)装好 `moon`，`moon version --all`
+能打印版本即就绪；仓内工装另需 bash 与 python。
 本仓库在 `preferred_target = "wasm"` 下开发与测试——native 目标在 Windows 需要 MSVC 工具链，
 那档读数由 CI 的 Linux job 出。async 运行时来自官方 `moonbitlang/async`。
+
+### 从源码运行
+
+这份仓库自身是一个 workspace：clone 下来后跑门禁或直接起示例（不要在本仓执行 `moon add`）：
+
+```bash
+git clone https://github.com/mldong/moon-token.git
+cd moon-token
+moon update
+bash scripts/gate.sh                        # 检查 + 测试 + 文档代码块 + 页面安装面
+moon run --target wasm examples/cmd/main    # 见下方「完整可运行示例」
+```
+
+下面的「最小用法」是 async 上下文里的语句（登录、鉴权、守卫都走异步）：整段放进 `async fn`
+或 `async test` 再编译；直接摊在模块顶层会报类型推断或 `cannot call async function in non-async function`。
 
 ## 最小用法
 

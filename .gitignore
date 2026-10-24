@@ -3,3 +3,4 @@ _build/
 .mooncakes/
 moon_meta.json
 *.wasm
+pkg.generated.mbti

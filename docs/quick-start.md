@@ -30,8 +30,9 @@ import {
 代码放模块的普通源文件（如 `src/*.mbt`）即可。若整个包只有 `*_test.mbt`，`moon.pkg` 的 import 块
 要写成 `} for "test"`——否则那些 import 对包本身算未使用，会报一片 `unused_package`。
 
-要求 MoonBit 工具链为当前稳定版（`moon version --all` 查看）。本库在 `preferred_target = "wasm"`
-下开发与测试；`native` 档由 CI 的 ubuntu job 裁决。
+要求 MoonBit 工具链为当前稳定版（`moon version --all` 查看）。尚未安装时先按
+[官方下载页](https://www.moonbitlang.com/download/)装好 `moon`，`moon version --all` 能打印版本即就绪。
+本库在 `preferred_target = "wasm"` 下开发与测试；`native` 档由 CI 的 ubuntu job 裁决。
 
 ## 2. 权限供数：实现一个端口就完事
 
