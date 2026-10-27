@@ -60,7 +60,7 @@ import {
 工具链要求：**跟随官方最新稳定版**（本机代次用 `moon version --all` 现读；CI 每次装官方 latest，
 本库始终在最新工具链上开发与验证——不钉旧版本、也不靠降级依赖绕版本偏斜）。
 尚未安装时先按[官方下载页](https://www.moonbitlang.com/download/)装好 `moon`，`moon version --all`
-能打印版本即就绪；仓内工装另需 bash 与 python。
+能打印版本即就绪；仓内工装另需 bash 与 python（Windows 上 bash 指 Git Bash，随 Git for Windows 自带）。
 本仓库在 `preferred_target = "wasm"` 下开发与测试——native 目标在 Windows 需要 MSVC 工具链，
 那档读数由 CI 的 Linux job 出。async 运行时来自官方 `moonbitlang/async`。
 
@@ -197,6 +197,13 @@ moon run --target wasm examples/cmd/moonback-demo      # 起在 http://127.0.0.1
 bash scripts/mw-smoke.sh                      # 另开终端：豁免/两腿/推导/例外/OR/角色/超管/注销
 ```
 
+起不了端口的环境（CI、受限容器）还有第三条腿：`examples/cmd/oneshot` 把同一套剧本搬进进程内，
+不起 HTTP、不占端口、跑完即退，每步断言**精确原因**：
+
+```bash
+moon run --target wasm examples/cmd/oneshot    # 免端口：13 步进程内剧本，PASS 即退
+```
+
 ## 文档
 
 用法、机制与取舍写在 `docs/` 下，按"先能跑通 → 再懂为什么这样设计"的顺序排：
@@ -235,7 +242,7 @@ bash scripts/mw-smoke.sh                      # 另开终端：豁免/两腿/推
 | 文件后端 | `store-file/` | `mldong/moon-token-store-file` | 内存为主 + 写穿透的文件持久化 → [模块 README](store-file/README.md) |
 | Redis 后端 | `store-redis/` | `mldong/moon-token-store-redis` | 跨进程跨实例共享会话；族 CAS、Lua 取删、与内存版同语义的翻页 → [模块 README](store-redis/README.md) |
 | web 适配 | `moonback/` | `mldong/moon-token-moonback` | moonback 逐路由守卫、主体进请求上下文、状态码映射 → [模块 README](moonback/README.md) |
-| 示例 | `examples/` | 不发布 | 两个可运行服务：`cmd/main`（手写路由 + 13 步 curl 剧本）、`cmd/moonback-demo`（框架守卫 + 状态码矩阵） |
+| 示例 | `examples/` | 不发布 | 三个可运行示例：`cmd/main`（手写路由 + 13 步 curl 剧本）、`cmd/moonback-demo`（框架守卫 + 状态码矩阵）、`cmd/oneshot`（免端口进程内剧本） |
 
 `docs/` 那批文档**不在发布包里**（模块 zip 只含模块目录），所以各模块 README 里的文档链接
 一律给 GitHub 绝对地址。这些 README 与 `docs/*.md` 同受 `scripts/docs-check.sh` 管：

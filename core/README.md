@@ -124,6 +124,47 @@ moon test --target wasm token_example_test.mbt
 
 测试应通过，并分别断言登录号为 `u1`、被踢后的原因为 `not login: KickedOut`。
 
+### 守卫最小形状
+
+路由守卫是纯逻辑，不绑定任何 web 框架；请求信息由两个闭包供给（取路径、取头）。
+在 `moon.pkg` 的 import 里加一行 `"mldong/moon-token/guard" @guard` 即可用：
+
+```moonbit
+test "守卫最小形状：match 圈保护面，not_match 挖豁免（豁免优先）" {
+  let route_guard = @guard.RouteGuard::new()
+    .match_pattern("/api/**")
+    .not_match_pattern("/api/public/**")
+  assert_eq(route_guard.rule_count(), 2)
+  assert_eq(@guard.matches_path("/api/**", "/api/user/info"), true)
+  assert_eq(@guard.matches_path("/api/public/**", "/api/public/ping"), true)
+}
+```
+
+豁免优先于保护面：`/api/public/ping` 同时命中两条模式，裁决为放行且**没有主体**。
+`check(...)` 可在登录校验之后追加权限断言。怎么挂到 HTTP 处理器（token 从哪个头取、
+失败怎么拿到精确原因），见[路由守卫文档](https://github.com/mldong/moon-token/blob/master/docs/route-guard.md)。
+
+### 十三项配置速查
+
+`@app.TokenConfig::default()` 的默认值即推荐值；每个值为什么是这个数，见
+[配置与默认值](https://github.com/mldong/moon-token/blob/master/docs/configuration.md)。
+
+| 配置 | 默认 | 说明 |
+|---|---|---|
+| `token_name` | `Authorization` | 守卫取 token 的头名 |
+| `token_prefix` | `""` | 读取侧剥前缀；空串＝裸值 |
+| `timeout` | `6h` | access 签发时效 |
+| `remember_timeout` | `30d` | "记住我"长时效档 |
+| `active_timeout` | `0`（不限） | 活跃时效；仅 `renewal = IdleMark` 档判 |
+| `renewal` | `SlideOnAccess` | 滑动续期档位 |
+| `renew_min_interval` | `60s` | 续期节流窗，避免每次访问都写回存储 |
+| `kick_grace` | `5min` | 被踢/注销后的保留窗（能报 KickedOut 而非 UnknownToken 的原因） |
+| `concurrent` | `Coexist` | 并发策略：`Coexist` / `Supersede` / `Shared` |
+| `refresh_timeout` | `30d` | refresh 时效 |
+| `max_sessions` | `12` | 同账号活会话上限；`-1`＝不限，超限按登录时刻淘汰最早的 |
+| `overflow_exit` | `Logout` | 被上限剔掉那枚的下线方式：`Logout` / `Kick` / `Supersede` |
+| `super_bypass` | `true` | 超管免权限校验、不免登录 |
+
 ## 文档
 
 用法、机制与取舍都在仓库的 `docs/` 下（mooncakes 只渲染本模块 README，所以链接给的是 GitHub 绝对地址）：
@@ -146,14 +187,15 @@ moon test --target wasm token_example_test.mbt
 | [数据模型](https://github.com/mldong/moon-token/blob/master/docs/data-model.md) | 六类记录字段、关系、TTL 公式、Redis/SQL 物理映射、变更纪律 |
 | [常见问题](https://github.com/mldong/moon-token/blob/master/docs/faq.md) | 集群、多 realm、与 JWT 的取舍、边界 |
 
-可运行示例（含手写十行路由的 HTTP 门面与 13 步 curl 剧本）：
-[`examples/cmd/main`](https://github.com/mldong/moon-token/tree/master/examples/cmd/main)。
+可运行示例（手写十行路由的 HTTP 门面＋13 步 curl 剧本；另有免端口、跑完即退的 one-shot 演示）：
+[`examples/cmd/main`](https://github.com/mldong/moon-token/tree/master/examples/cmd/main)、
+[`examples/cmd/oneshot`](https://github.com/mldong/moon-token/tree/master/examples/cmd/oneshot)。
 
 ## 升级注意
 
 批量注销、踢人和顶下线会同时撤销绑定的 refresh，旧 refresh 不能恢复登录。普通 realm 的会话键位不变；包含 `%`、`:`、`*`、`?`、`[`、`]`、反斜杠的旧 realm 会话需重新登录。
 
-自定义存储后端需同步 `FamilyPatch::TouchExpire` 的第六个参数 `key_expire_at`，将会话逻辑到期点与物理回收时刻分开处理。
+自定义存储后端需同步 `FamilyPatch::TouchExpire`，参数为 `(login_id, device, token, logical_expire_at, login_time, key_expire_at)`；最后的 `key_expire_at` 是物理回收时刻（逻辑到期点加 `kick_grace` 保留窗，由核心算好传入），后端不能拿逻辑到期点顶替它，否则保留窗作废。
 
 ## 边界（v1）
 
