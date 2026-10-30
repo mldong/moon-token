@@ -96,6 +96,17 @@ async fn uses_redis_store() -> String raise {
     Some(v) => v
     None => "127.0.0.1"
   }
+  let port = match @env.get_env_var("MT_REDIS_PORT") {
+    Some(v) => match @port.parse_int64(v) {
+      Some(n) => n.to_int()
+      None => 6379
+    }
+    None => 6379
+  }
+  let password = match @env.get_env_var("MT_REDIS_PWD") {
+    Some(v) => v
+    None => ""
+  }
   let db = match @env.get_env_var("MT_REDIS_DB") {
     Some(v) => match @port.parse_int64(v) {
       Some(n) => n.to_int()
@@ -103,7 +114,13 @@ async fn uses_redis_store() -> String raise {
     }
     None => 0
   }
-  let store = @redis_store.RedisStore::open("user", host, db=db)
+  let store = @redis_store.RedisStore::open(
+    "user",
+    host,
+    port=port,
+    password=password,
+    db=db,
+  )
   defer store.close()
   let key = store.keys.token("demo")
   // 4e12 ms ≈ 2096 年：示例不碰真实时钟，也不受机器时间影响
