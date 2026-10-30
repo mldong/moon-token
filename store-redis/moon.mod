@@ -1,6 +1,6 @@
 name = "mldong/moon-token-store-redis"
 
-version = "0.1.18"
+version = "0.1.19"
 
 license = "Apache-2.0"
 
@@ -29,7 +29,7 @@ keywords = [
 ]
 
 import {
-  "mldong/moon-token-store@0.1.18",
+  "mldong/moon-token-store@0.1.19",
   "oboard/redis@0.2.3",
   "moonbitlang/async@0.22.4",
 }
