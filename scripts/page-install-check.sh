@@ -16,6 +16,14 @@ MODE="${PAGE_MODE:-registry}"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
+# 上游件（async／moonback）按本仓声明代次装：页面清单写的是裸加（用户面跟随最新不变），
+# 但 registry 档照裸加执行会把上游最新件的求解缺陷误记到消费者腿上
+# （2026-10-30：async 0.22.6/0.22.7 连续两代 Cannot find import 'moonbitlang/core/async'）。
+# 消费者腿判的是"我们的包＋其声明依赖"这条契约。pin 现读不写死，免得漂。
+ASYNC=$(sed -nE 's/.*"moonbitlang\/async@([^"]+)".*/\1/p' "$REPO/core/moon.mod" | head -1)
+MB=$(sed -nE 's/.*"moonbitlang\/moonback@([^"]+)".*/\1/p' "$REPO/moonback/moon.mod" | head -1)
+[ -n "$ASYNC" ] && [ -n "$MB" ] || { echo "PAGE CHECK FAIL: 读不到声明代次（core 的 async pin／moonback 的 moonback pin）" >&2; exit 1; }
+
 # 发布清单现读发布链，不写死模块数
 mapfile -t PAIRS < <(grep -oE 'publish-if-absent\.sh +[a-z0-9_-]+ +mldong/[a-z0-9_-]+' \
   "$REPO/.github/workflows/publish.yml" | awk '{print $2 "|" $3}')
@@ -72,6 +80,10 @@ for pair in "${PAIRS[@]}"; do
     moon update > /dev/null
     while read -r dep; do
       [ -n "$dep" ] || continue
+      case "$dep" in
+        moonbitlang/async)    dep="moonbitlang/async@$ASYNC" ;;
+        moonbitlang/moonback) dep="moonbitlang/moonback@$MB" ;;
+      esac
       # 本家自己就是被装的那件；MoonBit 的传递依赖不自动可见，缺一条就会在 check 阶段报 not imported
       moon add "$dep" > /dev/null || { echo "FAIL $self: moon add $dep 装不到"; exit 1; }
     done <<< "$s_add"

@@ -23,14 +23,22 @@ TARGET="${DOCS_TARGET:-registry}"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/moon-token-docs-check.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
-# source 模式要用的三个 pin：本仓当前版本号，以及 core 钉的 async 版本、moonback 模块钉的 moonback 版本
-# （都不自己写死，免得漂）
+# 上游件（async／moonback）一律按本仓声明代次解析，registry/source 两档同尺：
+# 消费者腿判的是"我们的包＋其声明依赖"这条契约，裸加 latest 会把上游最新件的缺陷
+# 误记到我们头上（2026-10-30：async 0.22.6/0.22.7 连续两代求解缺陷；README 用户面仍裸加不受此影响）。
+# 都不自己写死，从 pin 现读，免得漂。
+ASYNC=$(sed -nE 's/.*"moonbitlang\/async@([^"]+)".*/\1/p' core/moon.mod | head -1)
+MB=$(sed -nE 's/.*"moonbitlang\/moonback@([^"]+)".*/\1/p' moonback/moon.mod | head -1)
+[ -n "$ASYNC" ] && [ -n "$MB" ] || {
+  echo "DOCS CHECK FAIL: 读不到 core/moon.mod 的 async pin 或 moonback/moon.mod 的 moonback pin" >&2
+  exit 1
+}
+
+# source 模式还要用的 pin：本仓当前版本号
 if [ "$TARGET" = "source" ]; then
   VER=$(sed -nE 's/^version = "([^"]+)".*/\1/p' core/moon.mod | head -1)
-  ASYNC=$(sed -nE 's/.*"moonbitlang\/async@([^"]+)".*/\1/p' core/moon.mod | head -1)
-  MB=$(sed -nE 's/.*"moonbitlang\/moonback@([^"]+)".*/\1/p' moonback/moon.mod | head -1)
-  [ -n "$VER" ] && [ -n "$ASYNC" ] && [ -n "$MB" ] || {
-    echo "DOCS CHECK FAIL: 读不到 core/moon.mod 的 version/async pin 或 moonback/moon.mod 的 moonback pin" >&2
+  [ -n "$VER" ] || {
+    echo "DOCS CHECK FAIL: 读不到 core/moon.mod 的 version" >&2
     exit 1
   }
   printf 'members = [\n  "%s/store",\n  "%s/core",\n  "%s/store-file",\n  "%s/store-redis",\n  "%s/moonback",\n' \
@@ -102,10 +110,10 @@ for doc in "${files[@]}"; do
       # 抽出来的代码用了 async 才挂这个依赖：多引一个包对包本身是 unused_package，
       # 而本仓零警告口径下它就是错误（source 模式不用管，async 已在 moon.mod 的 import 里）
       if grep -q 'moonbitlang/async' src/moon.pkg; then
-        moon add moonbitlang/async > /dev/null
+        moon add "moonbitlang/async@$ASYNC" > /dev/null
       fi
       if grep -q 'moonbitlang/moonback' src/moon.pkg; then
-        moon add moonbitlang/moonback > /dev/null
+        moon add "moonbitlang/moonback@$MB" > /dev/null
       fi
     )
   else

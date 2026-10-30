@@ -15,10 +15,15 @@ TARGET="${DOCS_TARGET:-registry}"   # 与 docs-check 共用一个旋钮：一个
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/moon-token-readme-check.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
+# 上游件一律按本仓声明代次解析（core/moon.mod 的 pin），registry/source 两档同尺：
+# 消费者腿判的是"我们的包＋其声明依赖"这条契约；裸加 latest 会把上游最新件的缺陷
+# 误记到我们头上（2026-10-30：async 0.22.6/0.22.7 连续两代求解缺陷，README 用户面仍裸加不受此影响）。
+ASYNC=$(sed -nE 's/.*"moonbitlang\/async@([^"]+)".*/\1/p' core/moon.mod | head -1)
+[ -n "$ASYNC" ] || { echo "README CHECK FAIL: 读不到 core/moon.mod 的 async pin" >&2; exit 1; }
+
 if [ "$TARGET" = "source" ]; then
   VER=$(sed -nE 's/^version = "([^"]+)".*/\1/p' core/moon.mod | head -1)
-  ASYNC=$(sed -nE 's/.*"moonbitlang\/async@([^"]+)".*/\1/p' core/moon.mod | head -1)
-  [ -n "$VER" ] && [ -n "$ASYNC" ] || { echo "README CHECK FAIL: 读不到 core/moon.mod 的 version 或 async pin" >&2; exit 1; }
+  [ -n "$VER" ] || { echo "README CHECK FAIL: 读不到 core/moon.mod 的 version" >&2; exit 1; }
 fi
 
 cd "$WORK"
@@ -27,7 +32,7 @@ cd readme_check
 if [ "$TARGET" = "registry" ]; then
   moon add mldong/moon-token >/dev/null
   moon add mldong/moon-token-store >/dev/null
-  moon add moonbitlang/async >/dev/null
+  moon add "moonbitlang/async@$ASYNC" >/dev/null
   RUN_DIR="$WORK/readme_check"
   RUN_SEL=""
 else
