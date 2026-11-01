@@ -15,8 +15,8 @@ description = "moonback adapter for moon-token: per-route authentication middlew
 import {
   "mldong/moon-token@0.1.19",
   "mldong/moon-token-store@0.1.19",
-  "moonbitlang/async@0.22.4",
-  "moonbitlang/moonback@0.8.6",
+  "moonbitlang/async@0.22.7",
+  "moonbitlang/moonback@0.8.10",
 }
 keywords = [
   "moonback",

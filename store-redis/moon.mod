@@ -31,5 +31,5 @@ keywords = [
 import {
   "mldong/moon-token-store@0.1.19",
   "oboard/redis@0.2.3",
-  "moonbitlang/async@0.22.4",
+  "moonbitlang/async@0.22.7",
 }

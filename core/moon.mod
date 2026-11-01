@@ -14,7 +14,7 @@ description = "DDD-layered login-state and session toolkit for MoonBit: multi-de
 
 import {
   "mldong/moon-token-store@0.1.19",
-  "moonbitlang/async@0.22.4",
+  "moonbitlang/async@0.22.7",
 }
 keywords = [
   "token",

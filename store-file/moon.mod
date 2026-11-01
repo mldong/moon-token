@@ -14,7 +14,7 @@ description = "File-backed TokenStore for moon-token: in-memory authority with w
 
 import {
   "mldong/moon-token-store@0.1.19",
-  "moonbitlang/async@0.22.4",
+  "moonbitlang/async@0.22.7",
 }
 keywords = [
   "token",
