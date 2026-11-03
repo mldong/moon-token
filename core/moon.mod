@@ -1,6 +1,6 @@
 name = "mldong/moon-token"
 
-version = "0.1.19"
+version = "0.1.20"
 
 license = "Apache-2.0"
 
@@ -13,7 +13,7 @@ repository = "https://github.com/mldong/moon-token"
 description = "DDD-layered login-state and session toolkit for MoonBit: multi-device sessions, access/refresh rotation, exact logout reasons (kicked / superseded / expired never collapse into one error), permission and role checks, route guard for web handlers"
 
 import {
-  "mldong/moon-token-store@0.1.19",
+  "mldong/moon-token-store@0.1.20",
   "moonbitlang/async@0.22.7",
 }
 keywords = [

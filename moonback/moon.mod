@@ -1,6 +1,6 @@
 name = "mldong/moon-token-moonback"
 
-version = "0.1.19"
+version = "0.1.20"
 
 license = "Apache-2.0"
 
@@ -13,8 +13,8 @@ repository = "https://github.com/mldong/moon-token"
 description = "moonback adapter for moon-token: per-route authentication middleware, request principal in context, route permission policy wiring, and HTTP status (or envelope) mapping for failures"
 
 import {
-  "mldong/moon-token@0.1.19",
-  "mldong/moon-token-store@0.1.19",
+  "mldong/moon-token@0.1.20",
+  "mldong/moon-token-store@0.1.20",
   "moonbitlang/async@0.22.7",
   "moonbitlang/moonback@0.8.10",
 }

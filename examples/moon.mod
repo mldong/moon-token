@@ -13,9 +13,9 @@ repository = "https://github.com/mldong/moon-token"
 description = "Runnable HTTP demo services for moon-token (not published): hand-rolled router and moonback-guarded routes"
 
 import {
-  "mldong/moon-token@0.1.19",
-  "mldong/moon-token-store@0.1.19",
-  "mldong/moon-token-moonback@0.1.19",
+  "mldong/moon-token@0.1.20",
+  "mldong/moon-token-store@0.1.20",
+  "mldong/moon-token-moonback@0.1.20",
   "moonbitlang/async@0.22.7",
   "moonbitlang/moonback@0.8.10",
 }
