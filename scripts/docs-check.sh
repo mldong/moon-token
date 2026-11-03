@@ -70,9 +70,9 @@ check_pkg() {
     # 会把这份 import 全判成 unused_package——那是判据用错了档，不是文档写错。
     # moon test 同时编译包与测试档，警告照样冒出来。
     test_log=$(moon test --target wasm $sel 2>&1)
-    if printf '%s' "$test_log" | grep -q "Warning"; then
+    if [ "$(printf '%s\n' "$test_log" | bash "$REPO/scripts/own-warn.sh")" != "0" ]; then
       printf '%s\n' "$test_log" | grep -B2 -A8 "Warning" | head -40
-      echo "文档代码块有警告（$label）" >&2
+      echo "文档代码块有本仓警告（$label）" >&2
       exit 1
     fi
     printf '%s\n' "$test_log" | tail -2

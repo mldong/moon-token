@@ -39,7 +39,7 @@ class TestGateTests(unittest.TestCase):
         self.work = Path(temporary.name)
         scripts = self.work / "scripts"
         scripts.mkdir()
-        for name in ("gate.sh", "check-test-result.py"):
+        for name in ("gate.sh", "check-test-result.py", "own-warn.sh"):
             shutil.copyfile(REPO / "scripts" / name, scripts / name)
         # The copied gate invokes a stub to avoid recursively running this suite.
         write(scripts / "test_test_gate.py",

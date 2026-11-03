@@ -88,7 +88,7 @@ for pair in "${PAIRS[@]}"; do
       moon add "$dep" > /dev/null || { echo "FAIL $self: moon add $dep 装不到"; exit 1; }
     done <<< "$s_add"
     log=$(moon test --target wasm --no-render 2>&1)
-    printf '%s' "$log" | grep -q "Warning" && { printf '%s\n' "$log" | grep -B2 -A6 Warning | head -30; echo "FAIL $self: 页面代码块有警告"; exit 1; }
+    [ "$(printf '%s\n' "$log" | bash "$REPO/scripts/own-warn.sh")" = "0" ] || { printf '%s\n' "$log" | grep -B2 -A6 Warning | head -30; echo "FAIL $self: 页面代码块有本仓警告"; exit 1; }
     printf '%s' "$log" | grep -q "failed: 0" || { printf '%s\n' "$log" | head -40; echo "FAIL $self: 页面代码块跑红"; exit 1; }
     n=$(printf '%s' "$log" | sed -n 's/.*Total tests: \([0-9]*\).*/\1/p')
     [ "${n:-0}" -gt 0 ] || { echo "FAIL $self: 一个用例都没收集到（死格）"; exit 1; }

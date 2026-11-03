@@ -3,6 +3,7 @@
 set -euo pipefail
 export MOON_HOME="${MOON_HOME:-$HOME/.moon}"
 cd "$(dirname "$0")/.."
+REPO=$(pwd -W 2>/dev/null || pwd)
 expected_tests=134
 PYTHONDONTWRITEBYTECODE=1 python scripts/test_test_gate.py
 
@@ -12,8 +13,10 @@ export DOCS_TARGET=source
 
 check_log=$(moon check --target wasm --no-render 2>&1)
 printf '%s\n' "$check_log" | tail -2
-if printf '%s' "$check_log" | grep -q "Warning"; then
-  echo "GATE FAIL: moon check 有警告（零警告发版口径）" >&2
+# 依赖树里的实验包告警不算本仓的账（口径见 scripts/own-warn.sh 头部）。
+if [ "$(printf '%s\n' "$check_log" | bash "$REPO/scripts/own-warn.sh")" != "0" ]; then
+  echo "GATE FAIL: moon check 有本仓警告（零警告发版口径）" >&2
+  printf '%s\n' "$check_log" | grep -B2 -A8 "Warning" | head -40 >&2
   exit 1
 fi
 

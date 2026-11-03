@@ -121,8 +121,10 @@ jobs:
       - name: Assert zero warnings
         run: |
           set -euo pipefail
+          bash scripts/own-warn.sh --selftest
           moon check --target wasm --no-render 2>&1 | tee check.txt
-          ! grep -q "Warning" check.txt
+          # 依赖树里的实验包告警不算本仓的账（口径见 scripts/own-warn.sh 头部）。
+          [ "$(bash scripts/own-warn.sh check.txt)" = "0" ]
 
   publish:
     name: Publish store + core + store-file + store-redis + moonback to mooncakes

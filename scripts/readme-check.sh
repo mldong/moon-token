@@ -110,9 +110,9 @@ printf '%s\n' "$log" | tail -3
 # README 段落的警告就是**真警告**（10-03 实测：`let route_guard = ...` 赋值后没用，
 # 这条一直静默通过，门禁却一直在报"零警告"，属于判据用错了档）。
 # 本仓对外口径是零警告，README 是用户第一个入口，不该例外。
-if printf '%s' "$log" | grep -q "Warning"; then
+if [ "$(printf '%s\n' "$log" | bash "$REPO/scripts/own-warn.sh")" != "0" ]; then
   printf '%s\n' "$log" | grep -B2 -A8 "Warning" | head -40
-  echo "README 代码块有警告（目标代次：$TARGET）——零警告口径下这是错误" >&2
+  echo "README 代码块有本仓警告（目标代次：$TARGET）——零警告口径下这是错误" >&2
   exit 1
 fi
 if printf '%s' "$log" | grep -q "failed: 0"; then
