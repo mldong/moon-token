@@ -4,3 +4,4 @@ _build/
 moon_meta.json
 *.wasm
 pkg.generated.mbti
+__pycache__/
