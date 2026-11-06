@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 REPO = Path(__file__).resolve().parent.parent
-EXPECTED = 134  # Keep fixtures aligned with the explicit CI/local matrix, not observed results.
+EXPECTED = 136  # Keep fixtures aligned with the explicit CI/local matrix, not observed results.
 
 
 def summary(total=EXPECTED, passed=EXPECTED, failed=0):

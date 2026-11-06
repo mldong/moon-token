@@ -304,3 +304,71 @@ async test "FS12 nested realms in one directory do not load each other's keys" {
     assert_eq(@file.FileStore::open(realm, dir).persisted_size(), 7)
   }
 }
+
+///|
+/// FS13/FS14 是验收实测打出来的那道并发写盘竞争的回归格：
+/// 同一实例 8 个并发登录，族键 `A:{login_id}` 是所有写落的同一条键，
+/// 临时文件名若共享一条，并发下 rename 会撞"源已不在"。FS13 用同账号复现热点，
+/// FS14 用不同账号做阳性对照（各写各的键，任何实现下都不该红）。
+/// 判据不是"内存里在"，是 0 条错误 + 重开实例把 9 个条目原样认回。
+async test "FS13 8 个并发登录同账号：族键热点并发写盘零错误" {
+  let dir = @fs.tmpdir(prefix="mt-fs13.")
+  defer @fs.rmdir(dir, recursive=true)
+  let store = @file.FileStore::open("user", dir)
+  let errors : Array[String] = []
+  @async.with_task_group() <| group => {
+    for i in 0..<8 {
+      group.spawn_bg() <| () => {
+        let tok = "tok\{i}"
+        try {
+          store.set("user:T:\{tok}", session_payload("u1", FAR), FAR)
+          store.apply(
+            @port.AddToken("u1", @port.Device::of("pc"), tok, FAR, 1_000_000L),
+          )
+        } catch {
+          err => errors.push(err.message())
+        }
+      }
+    }
+  }
+  assert_eq(errors, [])
+  // 8 条会话 + 1 条族键 + .gitignore
+  assert_eq(file_count(dir), 10)
+  let b = @file.FileStore::open("user", dir)
+  assert_eq(b.persisted_size(), 9)
+  match b.get(family_key("u1")) {
+    None => fail("族键没落盘")
+    Some(text) => for i in 0..<8 {
+      assert_true(text.contains("tok\{i}"))
+    }
+  }
+}
+
+///|
+async test "FS14 8 个并发登录不同账号：各写各键同样零错误" {
+  let dir = @fs.tmpdir(prefix="mt-fs14.")
+  defer @fs.rmdir(dir, recursive=true)
+  let store = @file.FileStore::open("user", dir)
+  let errors : Array[String] = []
+  @async.with_task_group() <| group => {
+    for i in 0..<8 {
+      group.spawn_bg() <| () => {
+        let user = "u\{i}"
+        let tok = "tok\{i}"
+        try {
+          store.set("user:T:\{tok}", session_payload(user, FAR), FAR)
+          store.apply(
+            @port.AddToken(user, @port.Device::of("pc"), tok, FAR, 1_000_000L),
+          )
+        } catch {
+          err => errors.push(err.message())
+        }
+      }
+    }
+  }
+  assert_eq(errors, [])
+  // 8 条会话 + 8 条族键 + .gitignore
+  assert_eq(file_count(dir), 17)
+  let b = @file.FileStore::open("user", dir)
+  assert_eq(b.persisted_size(), 16)
+}

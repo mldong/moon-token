@@ -87,7 +87,7 @@ jobs:
       - name: Test
         run: |
           set -euo pipefail
-          expected_tests=134
+          expected_tests=136
           moon test --target wasm --no-render 2>&1 | tee wasm-test.txt
           moon test --target native --no-render 2>&1 | tee native-test.txt
           # 门禁：退出码成功且唯一摘要精确匹配矩阵条数、全部通过（wasm-gc 会静默丢弃 async 用例）。

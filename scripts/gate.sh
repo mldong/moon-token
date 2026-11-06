@@ -4,7 +4,7 @@ set -euo pipefail
 export MOON_HOME="${MOON_HOME:-$HOME/.moon}"
 cd "$(dirname "$0")/.."
 REPO=$(pwd -W 2>/dev/null || pwd)
-expected_tests=134
+expected_tests=136
 PYTHONDONTWRITEBYTECODE=1 python scripts/test_test_gate.py
 
 # 文档检查切"对本地源码"那一支：发版前注册表还是旧代次，用 registry 模式判破坏性变更会假绿，

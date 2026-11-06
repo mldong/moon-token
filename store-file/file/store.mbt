@@ -20,6 +20,14 @@ pub struct FileStore {
   /// 上一次落盘时的条目镜像，用来算 diff（只写真正变过的键）
   persisted : Map[String, @mem.Entry]
   durable : Bool
+  /// 落盘段的进程内串行闸。并发登录会同时跑 flush：不加闸时各路自己算 diff，
+  /// 同一条键被多路同时写、persisted 镜像互相覆盖，"先删后写"还会把注销的会话
+  /// 文件复活。内存权威的变更（set/apply 本体）不进闸，照旧立即生效。
+  mu : @async.Mutex
+  /// 本实例已落盘次数，拼进临时文件名：临时名必须每次写唯一，理由见 write_entry
+  mut seq : Int
+  /// 实例打开时刻，拼进临时文件名，隔离同目录多实例（及不合契约的跨进程写）撞名面
+  opened_at : Int64
 }
 
 ///|
@@ -55,15 +63,20 @@ fn path_of(dir : String, key : String) -> String {
 }
 
 ///|
-/// 落一个键：先写 `.tmp` 再 rename 覆盖。探针实测这条路在 Windows 与 Linux 都成立，
+/// 落一个键：先写临时文件再 rename 覆盖。探针实测这条路在 Windows 与 Linux 都成立，
 /// 而"直接写目标文件"在进程中途被杀时会留下半截载荷。
+/// 临时文件名**每次写都唯一**（`目标.打开时刻.序号.tmp`），后缀仍收在 `.tmp`
+/// （重开清扫认后缀不认全名）。早期版本固定用 `目标.tmp`，并发登录时多路 flush
+/// 会对同一条尚未落盘的键同时走"写临时→rename"，第一路 rename 把临时件搬走后
+/// 其余各路全部撞"源已不在"——验收实测 8 路并发登录报 7 次错就是这个形状。
 async fn FileStore::write_entry(
   self : FileStore,
   key : String,
   entry : @mem.Entry,
 ) -> Unit raise @port.TokenError {
   let target = path_of(self.dir, key)
-  let tmp = target + ".tmp"
+  self.seq += 1
+  let tmp = "\{target}.\{self.opened_at}.\{self.seq}.tmp"
   let mode : @fs.SyncMode = if self.durable {
     @fs.Data
   } else {
@@ -92,7 +105,21 @@ async fn FileStore::drop_file(self : FileStore, key : String) -> Unit raise @por
 /// 把内存与盘面对齐：只写变过的，只删没的。
 /// 每次变更后都跑一遍，所以"读路径顺手回收的过期键"（`lookup` 会当场删内存条目）
 /// 也会在下一次写时把文件带走，不留复活素材。
+/// 整段（diff + 写盘 + 删文件）吃 `mu` 串行闸：并发登录各跑各的 flush 时，
+/// 没闸的话"别人还没落盘的键"会被反复算进每一路的 diff 白写一遍，
+/// persisted 镜像也会互相覆盖。
 async fn FileStore::flush(self : FileStore) -> Unit raise @port.TokenError {
+  self.mu.acquire()
+  // 清理走 errdefer 而不是 catch：未来语义里 catch 不再捕获取消，拿它做清理
+  // 会把"取消"当成正常错误路径漏放闸
+  errdefer self.mu.release()
+  self.flush_locked()
+  self.mu.release()
+}
+
+///|
+/// flush 的实体，调用方必须已持有 `mu`。
+async fn FileStore::flush_locked(self : FileStore) -> Unit raise @port.TokenError {
   let current = self.mem.entries
   let changed : Array[(String, @mem.Entry)] = []
   for (key, entry) in current {
@@ -135,6 +162,9 @@ pub async fn FileStore::open(
     realm,
     persisted: Map([]),
     durable: durable,
+    mu: @async.Mutex(),
+    seq: 0,
+    opened_at: @port.now_ms(),
   }
   try {
     @fs.mkdir(dir, recursive=true, allow_exist=true)
