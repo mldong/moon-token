@@ -1,8 +1,8 @@
 # moon-token
 
 MoonBit 生态的**登录态 / 会话标准件**：DDD 分层、async-first 契约、零第三方运行时依赖
-（只依赖官方 `moonbitlang/async`）。本包是**核心**——应用层用例、领域模型与裁决、路由守卫、
-领域事件、token 生成风格。
+（只依赖官方 `moonbitlang/async`——它现已是转发到编译器自带 `core/async` 实验包的薄 shim）。
+本包是**核心**——应用层用例、领域模型与裁决、路由守卫、领域事件、token 生成风格。
 
 存储契约与内存适配器在同家族的 [`mldong/moon-token-store`](https://mooncakes.io/docs/mldong/moon-token-store)。
 本包自己依赖它，但 **MoonBit 的传递依赖对调用方不自动可见**：只要你的代码写到 `@port`／`@mem`，
