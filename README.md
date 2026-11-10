@@ -26,7 +26,8 @@ Redis 后端另引 `oboard/redis`，moonback 适配层另引官方 `moonbitlang/
 
 已发布的模块按需引（都在 mooncakes.io，包页面即模块目录的 README；模块与代次清单现读各目录 `moon.mod`）。
 下面的命令是在**你的项目目录**里执行的；在本仓里不要 `moon add`（根目录是 workspace，会报
-`cannot infer a target module`），源码开发与测试直接 `bash scripts/gate.sh`（需要 bash 与 python）：
+`cannot infer a target module`），源码开发与测试直接 `bash scripts/gate.sh`（需要 bash 与 python）。
+还没有工程就先在自己选定的目录跑 `moon new <工程名>`，再进那个目录执行下面的命令：
 
 ```bash
 moon update
@@ -76,8 +77,9 @@ bash scripts/gate.sh                        # 检查 + 测试 + 文档代码块 
 moon run --target wasm examples/cmd/main    # 见下方「完整可运行示例」
 ```
 
-下面的「最小用法」是 async 上下文里的语句（登录、鉴权、守卫都走异步）：整段放进 `async fn`
-或 `async test` 再编译；直接摊在模块顶层会报类型推断或 `cannot call async function in non-async function`。
+下面的「最小用法」把顶层定义和 async 语句写在一起：`pub(all) struct`／`pub impl`／`pub extend`
+这类**顶层定义照抄在模块顶层**，其余语句放进 `async fn` 或 `async test`。整段塞进函数会因 `pub`
+不能出现在函数内而编不过；整段摊在顶层则会报 `cannot call async function in non-async function`。
 
 ## 最小用法
 
@@ -175,6 +177,10 @@ moon run --target wasm examples/cmd/main      # 起在 http://127.0.0.1:18890
 bash examples/curl.sh                         # 另开终端：13 步端对端剧本
 ```
 
+两个 HTTP 示例的端口写死在源码里（18890 / 18891），没有环境变量开关；`examples/curl.sh`
+要打别的地址用 `BASE=http://127.0.0.1:18890 bash examples/curl.sh`。端口被占就退到文末的
+免端口 oneshot，它跑同一套剧本。
+
 `examples/curl.sh` 那 13 步就是本库的行为说明书——每步都断言**精确原因**而不是"有没有报错"：
 
 | 步 | 动作 | 断言到的原因 |
@@ -264,7 +270,7 @@ bash scripts/gate.sh     # 本地门禁：零警告 + 用例条数与矩阵一�
 
 | 阶段 | 覆盖 |
 |---|---|
-| 检查 | `moon check --target wasm`——**零警告口径**，出现 `Warning` 即红 |
+| 检查 | `moon check --target wasm`——**零警告口径**：本仓告警出现即红；依赖树里官方实验包（如 async）的告警不算本仓的账，判据见 `scripts/own-warn.sh` |
 | 构建 | `moon build`，wasm 与 native 双档 |
 | 测试 | `moon test`，wasm 与 native 双档，并**断言用例条数**（wasm-gc 档会静默丢弃 `async test` 还报 passed，所以条数是硬判据、不是顺带看一眼） |
 | 可复现 | README 那段最小用法 + `docs/` 全部代码块 + 各模块 README，逐字灌进独立工程真编译真跑，同样判零警告；另有一道只按页面 `moon add` 清单装的安装面闸 |

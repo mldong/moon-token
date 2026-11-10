@@ -122,4 +122,5 @@ test "注入即生效，还原即回真" {
 [存储端口](https://github.com/mldong/moon-token/blob/master/docs/storage-port.md)，
 错误原因表见[错误词汇表](https://github.com/mldong/moon-token/blob/master/docs/error-vocabulary.md)。
 
-Apache-2.0。与 `mldong/moon-token` 同版本号、按拓扑序发布（本包先、核心后）。
+Apache-2.0。与 `mldong/moon-token` 按拓扑序发布（本包先、核心后）；各模块版本号独立，
+具体代次以各目录 `moon.mod` 现读为准。

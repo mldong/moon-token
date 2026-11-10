@@ -56,5 +56,5 @@ async test "文件后端就是同一个端口" {
 
 Apache-2.0。同家族发布件：`mldong/moon-token`（核心）、`mldong/moon-token-store`（契约与内存适配器）、
 本模块（文件后端）、`mldong/moon-token-store-redis`（Redis 后端）、`mldong/moon-token-moonback`
-（moonback 适配层）。版本号一致，按拓扑序发布（store 先，core / store-file / store-redis 随后，
-moonback 最后）。
+（moonback 适配层）。各模块版本号独立、按拓扑序发布（store 先，core / store-file / store-redis
+随后，moonback 最后），具体代次以各目录 `moon.mod` 现读为准。

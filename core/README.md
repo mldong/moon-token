@@ -221,7 +221,9 @@ test "守卫最小形状：match 圈保护面，not_match 挖豁免（豁免优�
 
 Apache-2.0。同家族发布件：`mldong/moon-token`（本包）、`mldong/moon-token-store`（契约与内存适配器）、
 `mldong/moon-token-store-file`（文件后端）、`mldong/moon-token-store-redis`（Redis 后端）、
-`mldong/moon-token-moonback`（moonback 适配层），同版本号、按拓扑序发布。
+`mldong/moon-token-moonback`（moonback 适配层）。各模块版本号独立、按拓扑序发布
+（store 先，core / store-file / store-redis 随后，moonback 最后），具体代次以各目录
+`moon.mod` 现读为准。
 
 设计参考 [Sa-Token](https://github.com/dromara/Sa-Token)，许可证为
 [Apache-2.0](https://github.com/dromara/Sa-Token/blob/dev/LICENSE)。参考范围是双向会话映射、
