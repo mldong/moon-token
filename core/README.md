@@ -32,6 +32,9 @@ import {
 `for "test"` 对应本例的测试文件；把实现放到普通 `.mbt` 源文件时，移除该限定。
 要用路由守卫就再加一行 `"mldong/moon-token/guard" @guard`。
 
+宿主工程自己的包名若也叫 `app`，上面的 `@app` 会撞名（常见报错是 `TokenAuth is undefined`），
+把别名换成一个不重名的（如 `@token_app`）即可。
+
 ## 它解决什么
 
 | 能力 | 说明 |
@@ -48,6 +51,23 @@ import {
 | 守卫 DSL | 路径模式 + 豁免 + 追加断言，纯逻辑、不绑定任何 web 框架 |
 | 领域事件 | 7 个事实事件，**落库后** fire，观察者异常不影响主流程 |
 | 可注入时钟 | 时效类特性不需要真等；测试与演示都靠它 |
+
+## 常用 API 速查
+
+一个 `TokenAuth` 实例上的主要入口（以下均为 `async`；完整清单以包内的
+`pkg.generated.mbti` 为准，深度用法见下方文档表）：
+
+| 场景 | 入口 |
+|---|---|
+| 登录 | `login(login_id, device?, remember?, extra?) -> LoginResult` |
+| 校验 | `check_login(token) -> String`（失败按精确原因抛）、`is_login(token) -> Bool` |
+| 注销 | `logout(token)`、`logout_by_id(login_id) -> Int` |
+| 踢人 | `kickout(login_id, device?) -> Int`（账号+设备）、`kickout_token(token) -> Int`（单枚） |
+| 顶人下线 | `supersede(login_id, device?) -> Int` |
+| 轮转/刷新 | `rotate(refresh_token) -> LoginResult`（整对换新，旧对同废） |
+| 在线列表 | `list_online(filter, cursor, limit) -> SessionPage`＋`load_online(page)` |
+| 权限/角色 | `has_permission`／`has_role` 返回 `Bool`；`check_permission`／`check_role` 抛缺失项 |
+| 封禁 | `disable(login_id, duration, reason?, operator?)`、`undo_disable(login_id)` |
 
 ## 五分钟跑通
 
@@ -123,6 +143,7 @@ moon test --target wasm token_example_test.mbt
 ```
 
 测试应通过，并分别断言登录号为 `u1`、被踢后的原因为 `not login: KickedOut`。
+注意 `wasm-gc` 档不收集 `async test`（显示 0 条、退出码仍是 0），跑测试用默认 wasm 档。
 
 ### 守卫最小形状
 
@@ -164,6 +185,20 @@ test "守卫最小形状：match 圈保护面，not_match 挖豁免（豁免优�
 | `max_sessions` | `12` | 同账号活会话上限；`-1`＝不限，超限按登录时刻淘汰最早的 |
 | `overflow_exit` | `Logout` | 被上限剔掉那枚的下线方式：`Logout` / `Kick` / `Supersede` |
 | `super_bypass` | `true` | 超管免权限校验、不免登录 |
+
+改配置就是改字段（`pub(all) mut`），不用另找构造器：
+
+```moonbit
+test "配置：按需改四个最常动的字段" {
+  let config = @app.TokenConfig::default()
+  config.timeout = @port.Duration::from_hours(2L)            // access 签发时效
+  config.active_timeout = @port.Duration::from_minutes(30L)  // 活跃时效；0 = 不限
+  config.max_sessions = 3                                    // 同账号活会话上限；-1 = 不限
+  config.concurrent = @port.Supersede                        // 顶人下线
+  assert_eq(config.timeout_ms(), 7_200_000L)
+  assert_eq(config.max_sessions, 3)
+}
+```
 
 ## 文档
 
