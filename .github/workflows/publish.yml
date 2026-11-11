@@ -2,10 +2,10 @@ name: publish
 
 # 文件名叫 publish.yml、name 叫 publish，与 jeeflow-moon 的发布入口对齐（那条仓也只有一个
 # publish.yml 承担发版，命名统一优先于「这条流水里检查更占篇幅」的观感）。
-# 参赛验收第 5 条要的 CI 覆盖检查/构建/测试，由其中的 verify job 兑现，
+# CI 必须覆盖检查/构建/测试三件事，由其中的 verify job 兑现，
 # job 名保持 Check / Build / Test (wasm + native)，run log 里一眼能看得出来。
 
-# 一条流水做完两件事：verify 跑检查/构建/测试（参赛验收第 5 条：CI 必须覆盖这三件事，
+# 一条流水做完两件事：verify 跑检查/构建/测试（CI 必须覆盖这三件事，
 # native 档只在 CI 跑，本机不试），全绿之后 publish 才把五个发布件按拓扑序发到 mooncakes。
 # 10-02 之前这是两份 workflow（ci.yml + publish.yml）并行跑在同一枚 tag 上，
 # 发布只靠自己那道 "用例数 >= 61" 的兜底门防"带红发布"；合成一条之后 verify 是 publish 的
@@ -94,7 +94,14 @@ jobs:
           python scripts/check-test-result.py "$expected_tests" wasm-test.txt
           python scripts/check-test-result.py "$expected_tests" native-test.txt
 
-      # 参赛验收第 4 条"README 可复现" + 使用文档每个 moonbit 块都真编译真跑。
+      # 公开面痕迹静态闸：本机路径／赛事语境／指认不存在的文件，命中即红并报文件行号。
+      # 单独一步（而不是只挂在 docs-check 里）：它不要工具链，红得比编译腿早，现场就是一行行号。
+      - name: Public-surface trace check
+        run: |
+          python scripts/check_traces.py --selftest
+          python scripts/check_traces.py
+
+      # "README 可复现" + 使用文档每个 moonbit 块都真编译真跑。
       # 这两步在 verify 里判的是"文档对不对得上当前这棵树"（DOCS_TARGET=source），
       # 与发布之后 publish job 里那两步（默认 registry，判用户装到的那一代）是两件事，不重复。
       - name: README snippet check (against workspace sources)

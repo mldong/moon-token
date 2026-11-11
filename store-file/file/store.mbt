@@ -1,7 +1,7 @@
 ///|
 /// 文件后端：**内存为主 + 写穿透**。
 ///
-/// 判据来源是探针（`G:\dev-tools\tmp\moon-file-probe`，可复跑）而不是想象：
+/// 判据来自可复跑的探针实测而不是想象：
 /// - wasm(moonrun) 上 mkdir / 写 / 读 / rename(replace) / readdir / remove 全部可用；
 /// - 每次写都 fsync 的代价实测约 36 ms/次，NoSync 约 0.5 ms/次，差 45 倍 ⇒ 默认 NoSync，
 ///   `durable=true` 才加 fsync。进程崩了不丢（写穿透已落 OS 页缓存），整机断电才丢最后几页；
@@ -68,7 +68,7 @@ fn path_of(dir : String, key : String) -> String {
 /// 临时文件名**每次写都唯一**（`目标.打开时刻.序号.tmp`），后缀仍收在 `.tmp`
 /// （重开清扫认后缀不认全名）。早期版本固定用 `目标.tmp`，并发登录时多路 flush
 /// 会对同一条尚未落盘的键同时走"写临时→rename"，第一路 rename 把临时件搬走后
-/// 其余各路全部撞"源已不在"——验收实测 8 路并发登录报 7 次错就是这个形状。
+/// 其余各路全部撞"源已不在"——8 路并发登录实测就是报 7 次这种错。
 async fn FileStore::write_entry(
   self : FileStore,
   key : String,

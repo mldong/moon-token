@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 把 README「最小用法」那段 moonbit 代码**逐字抽出**灌进一个独立工程，编译 + 跑一次。
-# 判的是参赛验收第 4 条"README 可复现"：
+# 判的是"README 可复现"这条硬要求：
 # 文档写的形状必须就是用户 `moon add` 之后能直接抄进去编译的东西。
 #
 # 两种目标代次（DOCS_TARGET，默认 registry），与 scripts/docs-check.sh 同一套理由：

@@ -306,7 +306,7 @@ async test "FS12 nested realms in one directory do not load each other's keys" {
 }
 
 ///|
-/// FS13/FS14 是验收实测打出来的那道并发写盘竞争的回归格：
+/// FS13/FS14 钉的是并发写盘竞争那道回归格：
 /// 同一实例 8 个并发登录，族键 `A:{login_id}` 是所有写落的同一条键，
 /// 临时文件名若共享一条，并发下 rename 会撞"源已不在"。FS13 用同账号复现热点，
 /// FS14 用不同账号做阳性对照（各写各的键，任何实现下都不该红）。

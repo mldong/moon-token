@@ -56,6 +56,9 @@ fi
 
 PYTHONDONTWRITEBYTECODE=1 python "$REPO/scripts/test_doc_tables.py"
 python "$REPO/scripts/check_doc_tables.py" "${files[@]}" README.md
+# 公开面痕迹闸（本机路径／赛事语境／指认不存在文件）：先自证敢报红，再扫整棵树。
+python "$REPO/scripts/check_traces.py" --selftest
+python "$REPO/scripts/check_traces.py"
 
 check_pkg() {
   # $1=运行目录 $2=包选择子（registry 模式留空＝跑当前模块唯一的包；

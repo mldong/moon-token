@@ -80,6 +80,8 @@ moon run --target wasm examples/cmd/main    # 见下方「完整可运行示例�
 下面的「最小用法」把顶层定义和 async 语句写在一起：`pub(all) struct`／`pub impl`／`pub extend`
 这类**顶层定义照抄在模块顶层**，其余语句放进 `async fn` 或 `async test`。整段塞进函数会因 `pub`
 不能出现在函数内而编不过；整段摊在顶层则会报 `cannot call async function in non-async function`。
+`async fn` 的返回类型要显式写（`async fn demo() -> Unit { ... }`），省略会报
+`Missing type annotation for the return value.`。
 
 ## 最小用法
 
@@ -274,6 +276,7 @@ bash scripts/gate.sh     # 本地门禁：零警告 + 用例条数与矩阵一�
 | 构建 | `moon build`，wasm 与 native 双档 |
 | 测试 | `moon test`，wasm 与 native 双档，并**断言用例条数**（wasm-gc 档会静默丢弃 `async test` 还报 passed，所以条数是硬判据、不是顺带看一眼） |
 | 可复现 | README 那段最小用法 + `docs/` 全部代码块 + 各模块 README，逐字灌进独立工程真编译真跑，同样判零警告；另有一道只按页面 `moon add` 清单装的安装面闸 |
+| 公开面痕迹 | 静态闸扫整棵树三类痕迹：本机才成立的地址、面向评审而非用户的口径字样、反引号点出仓内并不存在的文件；命中即红并报 `文件:行号`，判据与自检见 `scripts/check_traces.py` |
 
 触发方式：推 `v*.*.*` tag ⇒ 检查通过就发布到 mooncakes；`workflow_dispatch` ⇒ 默认只检查，勾 `publish` 才发。
 发布之后还会**只依赖注册表已发布件**再跑一遍文档检查——那一步就是"用户今天照文档敲能不能跑"的证据。

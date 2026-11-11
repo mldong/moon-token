@@ -29,6 +29,9 @@ import {
 
 代码放模块的普通源文件（如 `src/*.mbt`）即可。若整个包只有 `*_test.mbt`，`moon.pkg` 的 import 块
 要写成 `} for "test"`——否则那些 import 对包本身算未使用，会报一片 `unused_package`。
+同一处还有个可见性约束：`*_test.mbt` 是黑盒包，看不见同包里非测试文件中的私有 `fn`，把被用例
+引用的 `fn` 拆到普通源文件会报 `The value identifier ... is unbound`。要么把 `fn` 与用例并进同一个
+`*_test.mbt`，要么把那个 `fn` 标 `pub`。
 
 要求 MoonBit 工具链为当前稳定版（`moon version --all` 查看）。尚未安装时先按
 [官方下载页](https://www.moonbitlang.com/download/)装好 `moon`，`moon version --all` 能打印版本即就绪。
